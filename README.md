@@ -7,29 +7,6 @@
 MyWallet è una web application per la gestione delle finanze personali, permette agli utenti di registrarsi, autenticarsi e monitorare entrate, uscite e statistiche del proprio portafoglio digitale.
 L'autenticazione avviene tramite Supabase e i dati vengono aggiornati in tempo reale, un assistente virtuale basato su Mistral AI aiuta gli utenti ad analizzare le spese e a creare budget mensili personalizzati.
 
-## Anteprima
-
-<!-- Aggiungi il file docs/screenshots/demo.gif (vedi docs/screenshots/HOW-TO.md), poi togli i commenti.
-![Demo di MyWallet](docs/screenshots/demo.gif)
--->
-_Anteprima in arrivo — nel frattempo apri la [demo live](https://chiarafioref.github.io/MyWallet/)._
-
-## Screenshot
-
-<!-- Aggiungi i file in docs/screenshots/ (vedi docs/screenshots/HOW-TO.md), poi togli i commenti.
-| Dashboard | Statistiche |
-| :---: | :---: |
-| ![Dashboard](docs/screenshots/dashboard.png) | ![Statistiche](docs/screenshots/statistiche.png) |
-
-| Assistente AI | Consulente di budget |
-| :---: | :---: |
-| ![Assistente](docs/screenshots/assistente.png) | ![Budget](docs/screenshots/budget.png) |
-
-| Spese di gruppo (viaggi) | Report mensile |
-| :---: | :---: |
-| ![Viaggi](docs/screenshots/viaggi.png) | ![Report](docs/screenshots/report.png) |
--->
-
 ## Funzionalità
 
 - Registrazione e login tramite Supabase Authentication.
