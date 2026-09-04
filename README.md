@@ -120,10 +120,10 @@ Security, aggiornamenti realtime ed Edge Functions.
 
 ```mermaid
 flowchart LR
-    B["Browser<br/>(SPA vanilla JS)"] -- "JWT utente" --> S["Supabase<br/>Auth · PostgREST · Realtime"]
+    B["Browser — SPA vanilla JS"] -- "JWT utente" --> S["Supabase<br/>Auth · PostgREST · Realtime"]
     S -- "Row Level Security" --> DB[("PostgreSQL")]
-    B -- "functions.invoke('chat-ai')<br/>+ JWT" --> EF["Edge Function<br/>chat-ai (Deno)"]
-    EF -- "Authorization: Bearer<br/>(Secret lato server)" --> M["Mistral AI"]
+    B -- "invoke chat-ai + JWT" --> EF["Edge Function<br/>chat-ai · Deno"]
+    EF -- "Bearer MISTRAL_API_KEY<br/>Secret lato server" --> M["Mistral AI"]
 ```
 
 - **SPA senza build**: `index.html` carica `assets/js/app.js` come ES Module; il routing è
