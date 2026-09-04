@@ -1,0 +1,21 @@
+- L'utente può visualizzare in modo chiaro e aggiornato dove si trovano i propri soldi, distinguendo il saldo totale trai i diversi metodi di pagamento.
+- La disponibilità è collegata in tempo reale alle transazioni e ai trasferimenti di denaro.
+- L'utente deve poter sapere:
+  - Quanto denaro possiede complessivamente.
+  - Quanto denaro ha sulla carta.
+  - Quanto denaro ha in contanti.
+  - Come varia il saldo di ogni metodo di pagamento.
+  - Quali movimenti hanno modificato una determinata disponibilità.
+- Per ogni metodo deve essere mostrato:
+  - Nome.
+  - Icona.
+  - Saldo attuale.
+  - Percentuale rispetto alla disponibilità totale.
+  - Eventuale andamento del saldo.
+- I trasferimenti non devono:
+  - Essere conteggiati come entrate.
+  - Essere conteggiati come spese.
+  - Influenzare le statistiche delle categorie.
+  - Influenzare il budget.
+  - Comparire nei grafici delle entrate e spese.
+- I trasferimenti devono essere visibili nella cronologia dei movimenti.

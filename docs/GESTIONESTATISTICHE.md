@@ -1,0 +1,8 @@
+- Una sezione separata per le statistiche in cui sono presenti:
+  - Spese per categoria.
+  - Andamento mensile.
+  - Confronto entrate/uscite.
+  - Creazione di un budget mensile su misura per ogni categoria.
+  - Trend settimanali.
+  - Confronto con i mesi precedenti.
+  - Distribuzione delle spese.

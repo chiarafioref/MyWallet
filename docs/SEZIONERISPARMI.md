@@ -1,0 +1,10 @@
+- L'utente crea un obiettivo in cui inserisce:
+  - Nome obiettivo (es. Viaggio a New York).
+  - Obiettivo da raggiungere (es. 5000 €).
+  - Data fine obiettivo se prevista (es. 25/07/2028).
+- L'utente ogni qual volta risparmia del denaro lo aggiunge come entrata a questo obiettivo che quindi si aggiorna mostrando ciò che manca.
+- Per ogni obiettivo viene mostrato in quanto tempo verrà raggiunto se inserita la cifra suggerita.
+- Vengono osservate le categorie e se un mese l'utente ha speso meno del proprio budget viene suggerito di metterli nei risparmi per raggiungere l'obiettivo e viene generato un report in cui mostra:
+   - Quanto hai speso per una determinata categoria.
+   - Viene paragonata al budget disposto dall'utente.
+   - Viene suggerito di mettere la differenza tra budget e spesa nei risparmi.

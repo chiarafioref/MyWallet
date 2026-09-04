@@ -1,0 +1,14 @@
+- L'utente può creare un accantonamento specificando:
+  - Nome della spesa (es. TARI, ASSICURAZIONE AUTO, BOLLO, DENTISTA ecc.).
+  - Importo totale previsto.
+  - Data di scadenza.
+  - Note (facoltativa).
+- In base alla data di scadenza viene calcolata automaticamente l'importo da accantonare ogni mese per raggiungere l'obiettivo entro il tempo stabilito.
+- Un pulsante "ACCANTONA QUOTA MENSILE" che accantona direttamente la quota suggerita di quel mese.
+- Per ogni accantonamento vengono mostrati:
+  - Importo totale.
+  - Importo già accantonato.
+  - Quota mensile consigliata.
+  - Importo rimanente.
+  - Barra di avanzamento.
+- Un calendario che mostra quando sono previste le spese future e le prossime spese.

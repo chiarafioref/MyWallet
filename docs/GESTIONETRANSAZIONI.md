@@ -1,0 +1,10 @@
+- Ogni transazione contiene: 
+   - Titolo.
+   - Importo in euro.
+   - Per le uscite categorie a scelta tra: CASA (affitto/mutuo), SPESA, RISTORANTI, BAR, TRASPORTI, CARBURANTE, SPESE AUTO, UTENZE, SHOPPING, SPORT, INTRATTENIMENTO (concerti/eventi), SALUTE, ISTRUZIONE, VIAGGI, REGALI, TASSE, RATE FINANZIAMENTI e ALTRO.
+   - Per le entrate categorie a scelta tra: STIPENDIO, RIMBORSO, REGALI e ALTRO.
+   - Data.
+   - Tipo (ENTRATA "+" o USCITA "-").
+   - Descrizione (facoltativa).
+   - Metodo di pagamento (CONTANTI O CARTA).
+   - Transazione ricorrente SI/NO (se la transazione è ricorrente viene inserita automaticamente tutti i mesi).

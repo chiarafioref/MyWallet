@@ -1,0 +1,7 @@
+- L'utente può inserire e modificare:
+  - Nome.
+  - Cognome.
+  - Password.
+  - Tema.
+  - Valuta.
+  - Elimina account.

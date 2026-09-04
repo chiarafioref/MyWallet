@@ -1,0 +1,10 @@
+- Mostra:
+  - Saldo totale aggiornato.
+  - Entrate del mese.
+  - Uscite del mese.
+  - Risparmi totali.
+  - Budget rimanente.
+  - Prossima spesa futura.
+  - Ultime 5 transazioni.
+  - Grafico delle spese per categorie.
+  - Piccola card che mostra l'abbonamento in promozione in scadenza se presente (es. Netflix passerà da 7.99 € a 15.00 €, il tuo costo mensile per gli abbonamenti aumenterà di 7.01 €).

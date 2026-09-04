@@ -1,0 +1,9 @@
+# Supabase project configuration.
+# `project_id` is overwritten by `supabase link --project-ref <your-ref>`.
+project_id = "mywallet"
+
+# AI assistant proxy.
+# verify_jwt = true -> only authenticated users can invoke the function;
+# the browser client (supabaseClient.functions.invoke) attaches the session JWT.
+[functions.chat-ai]
+verify_jwt = true

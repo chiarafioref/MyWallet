@@ -1,0 +1,34 @@
+- L’interfaccia deve essere moderna, fluida e ricca di micro-animazioni, con l’obiettivo di offrire un’esperienza utente simile alle principali applicazioni fintech.
+- Tema:
+  - Tema Chiaro e Tema Scuro selezionabili dall’utente.
+  - Transizione animata tra i due temi.
+- Stile grafico:
+  - Design moderno e minimal.
+  - Card con bordi arrotondati.
+  - Effetto vetro (Glassmorphism) nelle sezioni principali.
+  - Ombre morbide e profondità degli elementi.
+  - Palette colori coerente con accenti verdi (entrate), rossi (uscite) e blu (azioni principali).
+- Animazioni:
+  - Transizioni fluide tra le pagine.
+  - Animazioni di apertura e chiusura delle finestre modali.
+  - Hover animati su pulsanti e card.
+  - Effetti di comparsa (Fade In, Slide In, Scale In).
+  - Contatori numerici animati per saldo, entrate e uscite.
+  - Barre di avanzamento animate.
+  - Grafici animati.
+  - Skeleton Loading durante il caricamento dei dati.
+  - Toast animati per notifiche e conferme.
+  - Effetti di successo dopo l’aggiunta o modifica di una transazione.
+- Dashboard:
+  - Widget interattivi.
+  - Grafici aggiornati in tempo reale.
+  - Indicatori colorati per budget, risparmi e spese future.
+  - Timeline delle ultime transazioni.
+- User Experience:
+  - Responsive su desktop, tablet e smartphone.
+  - Form con validazione in tempo reale.
+  - Empty State personalizzate.
+  - Shortcut da tastiera.
+  - Feedback visivo per ogni azione dell’utente.
+  - Scroll fluido.
+  - Nessun refresh della pagina durante l’utilizzo dell’app.

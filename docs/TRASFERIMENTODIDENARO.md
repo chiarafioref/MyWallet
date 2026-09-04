@@ -1,0 +1,12 @@
+- L'utente può registrare trasferimenti di denaro tra i diversi metodi di pagamento senza considerarli come entrate o uscite.
+- L'utente può prelevare contanti dal proprio conto e il proprio saldo patrimoniale complessivo rimane invariato.
+- La disponibilità di denaro associata ai singoli metodi di pagamento cambia.
+- L'utente può specificare :
+  - Metodo di origine.
+  - Metodo di destinazione.
+  - Importo.
+  - Data.
+  - Note (facoltative).
+- La web app mantiene separata la disponibilità dei diversi metodi di pagamento.
+- Un trasferimento modifica esclusivamente la distribuzione del denaro.
+- I trasferimenti non vengono conteggiati nelle statistiche delle entrate e delle uscite e non influenzano il calcolo dei budget, poichè non rappresentano un guadagno o una spesa.

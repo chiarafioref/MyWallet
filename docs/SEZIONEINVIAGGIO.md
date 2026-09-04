@@ -1,0 +1,18 @@
+- L'utente può creare un nuovo viaggio e ottenere una chiave univoca da condividere con i propri amici.
+   - Inserendo questa chiave, gli altri partecipanti possono unirsi al gruppo e accedere al portafoglio condiviso.
+- L'utente può inserire una chiave univoca per accedere ad un portafoglio viaggio creato da un altro utente.
+- Ogni membro può registrare nuove spese indicando: 
+  - Titolo.
+  - Importo in euro.
+  - Categoria a scelta tra:  ALLOGGIO, CIBO E RISTORANTI, TRASPORTI, CARBURANTE, PARCHEGGI E PEDAGGI, ATTIVITà, MUSEI e ALTRO.
+  - Data.
+  - Tipo (ENTRATA "+" o USCITA "-").
+  - Descrizione (facoltativa).
+- L'utente può aggiungere categorie di spesa personalizzabili.
+- Tutti gli utenti possono visualizzare il nome di chi ha fatto la spesa.
+- Un pulsante stato del viaggio (ATTIVO/TERMINATO) 
+- SE TERMINATO:
+  - L'utente non può più inserire nuove spese.
+  - Viene mostrato il totale delle spese del viaggio.
+  - Quanto ogni persona ha contribuito.
+  - Quanto ciascun partecipante deve ricevere o deve restituire rispettivamente agli altri partecipanti.

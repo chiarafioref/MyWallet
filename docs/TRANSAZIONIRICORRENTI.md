@@ -1,0 +1,26 @@
+- Permette all'utente di registrare e monitorare le proprie spese ricorrenti, come abbonamenti a servizi di streaming, palestre, assicurazioni, ricariche telefoniche ecc.
+- Ogni spesa ricorrente viene configurata specificando:
+  - Nome spesa o abbonamento.
+  - Importo.
+  - Categoria.
+  - Metodo di pagamento (Contanti o Carta).
+  - Frequenza del pagamento (Mensile/Annuale/Personalizzata).
+  - Data del prossimo pagamento.
+  - Data di inizio.
+  - Data fine se prevista.
+  - Prezzo in promozione (SI/NO):
+     - Se impostato su SI l'utente indica da quando cambierà l'importo e di quanto sarà. (es. 3.99 € i primi tre mesi e 7.99 € i mesi successivi).
+     - Avviso di fine promozione in cui viene mostrato un messaggio all'utente che lo informa del cambio di prezzo una settimana prima della scadenza.
+- Gli abbonamenti vengono considerati automaticamente nella previsione delle spese future e quindi considerati anche nei budget.
+- Viene mostrata anche la stima del costo complessivo degli abbonamenti attivi, in caso di promozioni il costo tiene conto sia del periodo promozionale sia del prezzo successivo, mostrando: 
+  - Il numero di abbonamenti attivi.
+  - Il costo mensile degli abbonamenti.
+  - Il costo annuale stimato.
+- Gestione abbonamenti:
+  - L'utente può aggiungere un nuovo abbonamento.
+  - Modificare un abbonamento.
+  - Eliminare un abbonamento.
+  - Sospendere temporaneamente un abbonamento.
+  - Visualizzare il prossimo pagamento.
+- Le spese generate dagli abbonamenti vengono automaticamente integrate con budget, statistiche, storico delle transazioni e previsione spese future.
+- Piccola card nella dashoboard che mostra l'abbonamento in promozione in scadenza (es. Netflix passerà da 7.99 € a 15.00 €, il tuo costo mensile per gli abbonamenti aumenterà di 7.01 €).

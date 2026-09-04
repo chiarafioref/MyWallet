@@ -1,0 +1,8 @@
+- L'utente può creare un budget personalizzato per ogni categoria per monitorare e controllare le proprie spese.
+- Per ogni budget è possibile definire:
+  - Categoria di spesa.
+  - Importo massimo da non superare.
+- Viene aggiornato il budget automaticamente ad ogni transazione mostrando:
+  - Il budget rimanente.
+  - La percentuale di utilizzo.
+  - Avvisi quando ci sia avvicina o si supera il limite impostato. 
