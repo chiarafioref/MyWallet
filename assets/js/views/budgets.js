@@ -5,7 +5,7 @@
 import { state, selectors } from "../store.js";
 import { budgets as budgetApi } from "../data.js";
 import { buildForm } from "../form.js";
-import { el, qs, formatMoney, toast, openModal, closeModal, emptyState, animateCounter } from "../utils.js";
+import { el, qs, formatMoney, toast, openModal, closeModal, emptyState, animateCounter, confirmDialog } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 import { renderBudgetPlanner } from "../assistant/budget-planner.js";
 
@@ -181,7 +181,7 @@ function openBudgetModal(budget = null) {
 }
 
 async function remove(b) {
-  if (!confirm("Eliminare questo budget?")) return;
+  if (!(await confirmDialog("Eliminare questo budget?"))) return;
   try {
     await budgetApi.remove(b.id);
     toast("Budget eliminato", "success");

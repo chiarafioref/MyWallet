@@ -5,7 +5,7 @@ import { buildForm } from "../form.js";
 import { enhanceSelect } from "../select.js";
 import {
   el, qs, formatMoney, formatDate, todayISO, toast, openModal, closeModal,
-  emptyState, debounce,
+  emptyState, debounce, confirmDialog,
 } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 
@@ -330,6 +330,35 @@ function categoryOptions(type) {
   return selectors.incomeCategories().map((c) => ({ value: c.id, label: c.name }));
 }
 
+// Common titles to suggest when the user has little or no history yet.
+const BASE_TITLE_SUGGESTIONS = {
+  USCITA: [
+    "SPESA SUPERMERCATO", "BENZINA", "AFFITTO", "BOLLETTA LUCE", "BOLLETTA GAS",
+    "RISTORANTE", "FARMACIA", "PARRUCCHIERE", "PALESTRA", "ABBONAMENTO STREAMING",
+  ],
+  ENTRATA: ["STIPENDIO", "RIMBORSO", "REGALO", "BONUS", "VENDITA", "LAVORO FREELANCE"],
+};
+
+// Titles already used by the user for this movement type, ranked by how often
+// and how recently they were used, followed by generic suggestions not yet used.
+function titleSuggestions(type) {
+  const stats = new Map(); // title -> { count, lastDate }
+  for (const t of state.transactions) {
+    if (t.type !== type) continue;
+    const entry = stats.get(t.title) || { count: 0, lastDate: "" };
+    entry.count++;
+    if (t.tx_date > entry.lastDate) entry.lastDate = t.tx_date;
+    stats.set(t.title, entry);
+  }
+  const personal = [...stats.entries()]
+    .sort((a, b) => b[1].count - a[1].count || b[1].lastDate.localeCompare(a[1].lastDate))
+    .map(([title]) => title);
+
+  const seen = new Set(personal.map((s) => s.toUpperCase()));
+  const basics = (BASE_TITLE_SUGGESTIONS[type] || []).filter((s) => !seen.has(s.toUpperCase()));
+  return [...personal, ...basics];
+}
+
 export function openTxModal(tx = null) {
   const editing = !!tx;
   let type = tx?.type || "USCITA";
@@ -343,7 +372,7 @@ export function openTxModal(tx = null) {
         { name: "type", label: "Tipo di movimento", type: "select", value: type, options: [
           { value: "USCITA", label: "Uscita" }, { value: "ENTRATA", label: "Entrata" },
         ]},
-        { name: "title", label: "Titolo", required: true, value: tx?.title },
+        { name: "title", label: "Titolo", required: true, value: tx?.title, suggestions: titleSuggestions(type) },
         { name: "amount", label: "Importo (€)", type: "number", step: "0.01", min: "0.01", required: true, value: tx?.amount },
         { name: "category_id", label: "Categoria", type: "select", required: true, value: tx?.category_id, options: categoryOptions(type) },
         { name: "tx_date", label: "Data", type: "date", required: true, value: tx?.tx_date || todayISO() },
@@ -403,7 +432,7 @@ export function openTxModal(tx = null) {
 }
 
 async function removeTx(tx) {
-  if (!confirm(`Eliminare "${tx.title}"?`)) return;
+  if (!(await confirmDialog(`Eliminare "${tx.title}"?`))) return;
   try {
     await txApi.remove(tx.id);
     toast("Transazione eliminata", "success");
@@ -495,7 +524,7 @@ export function openTransferModal(tr = null) {
 }
 
 async function removeTransfer(tr) {
-  if (!confirm("Eliminare questo trasferimento?")) return;
+  if (!(await confirmDialog("Eliminare questo trasferimento?"))) return;
   try {
     await transferApi.remove(tr.id);
     state.transfers = state.transfers.filter((x) => x.id !== tr.id);

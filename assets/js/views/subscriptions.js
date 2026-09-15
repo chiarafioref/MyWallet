@@ -7,7 +7,7 @@ import { state, selectors } from "../store.js";
 import { subscriptions as subApi } from "../data.js";
 import { buildForm } from "../form.js";
 import {
-  el, formatMoney, formatDate, todayISO, toast, openModal, closeModal, emptyState, animateCounter,
+  el, formatMoney, formatDate, todayISO, toast, openModal, closeModal, emptyState, animateCounter, confirmDialog,
 } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 import { generateSubscriptions } from "../subscriptions.js";
@@ -220,7 +220,7 @@ async function togglePause(sub) {
 }
 
 async function remove(sub) {
-  if (!confirm(`Eliminare l'abbonamento "${sub.name}"? Le spese già registrate restano nello storico.`)) return;
+  if (!(await confirmDialog(`Eliminare l'abbonamento "${sub.name}"? Le spese già registrate restano nello storico.`))) return;
   try {
     await subApi.remove(sub.id);
     toast("Abbonamento eliminato", "success");

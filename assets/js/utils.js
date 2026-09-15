@@ -107,6 +107,33 @@ function escToClose(e) {
   if (e.key === "Escape") closeModal();
 }
 
+// In-app replacement for window.confirm(): native dialogs are unreliable in
+// some contexts (e.g. iOS home-screen apps silently suppress them), and this
+// also matches the app's own visual style.
+export function confirmDialog(message, { title = "Conferma", confirmLabel = "Elimina", cancelLabel = "Annulla", danger = true } = {}) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (v) => {
+      if (done) return;
+      done = true;
+      document.removeEventListener("keydown", onKey);
+      closeModal();
+      resolve(v);
+    };
+    const onKey = (e) => { if (e.key === "Escape") finish(false); };
+    document.addEventListener("keydown", onKey);
+
+    const body = el("div", { class: "confirm-dialog" }, [
+      el("p", { class: "confirm-dialog__text", text: message }),
+      el("div", { class: "confirm-dialog__actions" }, [
+        el("button", { type: "button", class: "btn btn--ghost", onclick: () => finish(false) }, cancelLabel),
+        el("button", { type: "button", class: `btn ${danger ? "btn--danger" : "btn--primary"}`, onclick: () => finish(true) }, confirmLabel),
+      ]),
+    ]);
+    openModal({ title, body, onClose: () => finish(false) });
+  });
+}
+
 export function closeModal(onClose) {
   const overlay = qs("#app-modal");
   if (!overlay) return;

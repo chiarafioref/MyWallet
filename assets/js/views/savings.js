@@ -8,7 +8,7 @@ import { state, selectors, touch } from "../store.js";
 import { goals as goalApi, transactions as txApi } from "../data.js";
 import { buildForm } from "../form.js";
 import {
-  el, formatMoney, formatDate, todayISO, isSameMonth, toast, openModal, closeModal, emptyState, animateCounter,
+  el, formatMoney, formatDate, todayISO, isSameMonth, toast, openModal, closeModal, emptyState, animateCounter, confirmDialog,
 } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 
@@ -237,7 +237,7 @@ function contribute(goal) {
 }
 
 async function remove(goal) {
-  if (!confirm(`Eliminare l'obiettivo "${goal.name}"? Verranno rimossi anche i movimenti di risparmio collegati.`)) return;
+  if (!(await confirmDialog(`Eliminare l'obiettivo "${goal.name}"? Verranno rimossi anche i movimenti di risparmio collegati.`))) return;
   try {
     await txApi.removeByGoal(goal.id);
     await goalApi.remove(goal.id);

@@ -8,7 +8,7 @@ import { trips as tripApi } from "../data.js";
 import { buildForm } from "../form.js";
 import { supabaseClient } from "../supabaseClient.js";
 import {
-  el, qs, formatMoney, formatDate, todayISO, toast, openModal, closeModal, emptyState, animateCounter,
+  el, qs, formatMoney, formatDate, todayISO, toast, openModal, closeModal, emptyState, animateCounter, confirmDialog,
 } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 import { donutChart, catColor, PALETTE } from "../chart.js";
@@ -421,7 +421,7 @@ function addExpenseModal(trip, categoryList, members, done) {
 
 async function toggleStatus(trip) {
   const next = trip.status === "ATTIVO" ? "TERMINATO" : "ATTIVO";
-  if (!confirm(next === "TERMINATO" ? `Concludere il viaggio "${trip.name}"? Potrai comunque consultare il resoconto.` : `Riaprire il viaggio "${trip.name}"?`)) return;
+  if (!(await confirmDialog(next === "TERMINATO" ? `Concludere il viaggio "${trip.name}"? Potrai comunque consultare il resoconto.` : `Riaprire il viaggio "${trip.name}"?`, { confirmLabel: next === "TERMINATO" ? "Concludi" : "Riapri", danger: false }))) return;
   try {
     await tripApi.setStatus(trip.id, next);
     toast(next === "TERMINATO" ? "Viaggio concluso" : "Viaggio riaperto", "success");
@@ -431,7 +431,7 @@ async function toggleStatus(trip) {
 }
 
 async function removeTrip(trip) {
-  if (!confirm(`Eliminare il viaggio "${trip.name}"? L'operazione non è reversibile.`)) return;
+  if (!(await confirmDialog(`Eliminare il viaggio "${trip.name}"? L'operazione non è reversibile.`))) return;
   try {
     await tripApi.remove(trip.id);
     toast("Viaggio eliminato", "success");

@@ -1,15 +1,17 @@
 // Helper to build forms with real-time validation.
 import { el } from "./utils.js";
 import { enhanceSelect } from "./select.js";
+import { enhanceAutocomplete } from "./autocomplete.js";
 
 // Two-option fields rendered as a segmented control instead of a dropdown.
 const SEG_FIELDS = new Set(["type", "payment_method", "theme", "kind"]);
 
-// fields: [{ name, label, type, required, value, options, min, step, placeholder, hint, showIf }]
+// fields: [{ name, label, type, required, value, options, min, step, placeholder, hint, showIf, suggestions }]
 //   showIf: "checkboxName"                       -> visible when that toggle is on
 //   showIf: { field: "frequency", value: "X" }   -> visible when that field equals X
 //                                                    (value may also be an array)
 //   a select's options may be grouped: { label: "Group", options: [...] }
+//   suggestions: string[]  -> text input only; shows a filterable dropdown of candidates
 export function buildForm(fields, { submitLabel = "Salva", onSubmit }) {
   const form = el("form", { class: "app-form", novalidate: true });
   const conditional = [];
@@ -55,6 +57,7 @@ export function buildForm(fields, { submitLabel = "Salva", onSubmit }) {
       control = el("textarea", { name: f.name, rows: 3, placeholder: f.placeholder ?? null }, f.value ?? "");
     } else {
       control = el("input", controlAttrs);
+      if (f.suggestions) enhanceAutocomplete(control, f.suggestions);
     }
 
     const field = el("div", { class: `field${f.showIf ? " field--conditional" : ""}`, style: `--i:${idx}` }, [

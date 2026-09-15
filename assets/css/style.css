@@ -391,6 +391,9 @@ html[data-theme="dark"] .sel__opt.is-selected { color: var(--primary-hover); }
 /* Compact variant in the transaction filters. */
 .tx-adv__field .sel__trigger { padding: 0.55rem 0.7rem; border-radius: var(--r-xs); }
 
+/* Autocomplete suggestions (text inputs), reusing the .sel__menu/.sel__opt look. */
+.ac-menu .sel__opt { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
 @media (prefers-reduced-motion: reduce) {
   .sel__menu, .sel__chevron, .sel__opt, .sel__opt-check { transition: none; animation: none; }
   .sel__menu.is-open .sel__opt { animation: none; }
@@ -1885,6 +1888,10 @@ html[data-theme="dark"] .bp-badge--need { color: var(--text); }
 .modal__head h3 { margin: 0; font-size: 1.1rem; }
 .modal__head .icon-btn { margin: -0.3rem -0.35rem -0.3rem 0; }
 .modal__body { display: flex; flex-direction: column; gap: 0.7rem; }
+
+.confirm-dialog__text { margin: 0 0 0.3rem; color: var(--text-2); font-size: 0.92rem; line-height: 1.5; }
+.confirm-dialog__actions { display: flex; gap: 0.6rem; }
+.confirm-dialog__actions .btn { flex: 1; }
 
 .toast-holder {
   position: fixed; left: 0; right: 0; bottom: calc(var(--tabbar-h) + var(--safe-b) + 0.6rem); z-index: 200;

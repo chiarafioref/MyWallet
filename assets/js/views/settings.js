@@ -3,7 +3,7 @@ import { state, applyTheme } from "../store.js";
 import { profile as profileApi, categories as catApi } from "../data.js";
 import { buildForm } from "../form.js";
 import { signOut } from "../auth.js";
-import { setCurrency, el, toast, openModal, closeModal } from "../utils.js";
+import { setCurrency, el, toast, openModal, closeModal, confirmDialog } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 
 export function render(container) {
@@ -86,7 +86,7 @@ function customCategories() {
           el("li", { class: "chip" }, [
             el("span", { text: `${c.name} · ${c.kind === "income" ? "entrata" : "uscita"}` }),
             el("button", { class: "chip__x", "aria-label": "Elimina categoria", html: icon("close", { size: 14 }), onclick: async () => {
-              if (!confirm(`Eliminare "${c.name}"?`)) return;
+              if (!(await confirmDialog(`Eliminare "${c.name}"?`))) return;
               try { await catApi.remove(c.id); toast("Categoria eliminata", "success"); }
               catch (err) { toast(err.message, "error"); }
             }}),

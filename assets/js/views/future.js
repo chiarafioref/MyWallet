@@ -3,7 +3,7 @@ import { state, selectors, touch } from "../store.js";
 import { futureExpenses as feApi, transactions as txApi } from "../data.js";
 import { buildForm } from "../form.js";
 import {
-  el, formatMoney, formatDate, todayISO, toast, openModal, closeModal, emptyState,
+  el, formatMoney, formatDate, todayISO, toast, openModal, closeModal, emptyState, confirmDialog,
 } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 
@@ -151,7 +151,7 @@ async function accantona(f, quota) {
 }
 
 async function remove(f) {
-  if (!confirm(`Eliminare "${f.name}"? Verranno rimossi anche i movimenti di accantonamento collegati.`)) return;
+  if (!(await confirmDialog(`Eliminare "${f.name}"? Verranno rimossi anche i movimenti di accantonamento collegati.`))) return;
   try {
     await txApi.removeByFuture(f.id);
     await feApi.remove(f.id);
