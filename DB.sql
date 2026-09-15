@@ -732,4 +732,11 @@ create trigger trg_transfers_balance
   before insert or update on public.transfers
   for each row execute function public.check_transfer_balance();
 
+
+-- 14. ONBOARDING
+-- Tutorial introduttivo mostrato al primo accesso; persistito lato server
+-- così lo stato segue l'utente su ogni dispositivo.
+alter table public.profiles
+  add column if not exists onboarding_completed boolean not null default false;
+
 -- END

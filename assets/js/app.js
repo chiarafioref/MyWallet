@@ -4,6 +4,7 @@ import { state, on, loadAll, startRealtime, stopRealtime, applyTheme } from "./s
 import { profile as profileApi } from "./data.js";
 import { qs, el, toast } from "./utils.js";
 import { icon, brandMark } from "./icons.js";
+import { openOnboarding } from "./onboarding.js";
 
 import { render as dashboard } from "./views/dashboard.js";
 import { render as transactions, openTxModal } from "./views/transactions.js";
@@ -66,6 +67,9 @@ async function handleSession(session) {
       startRealtime(session.user.id);
       on("change", onStoreChange);
       renderRoute();
+      if (!state.profile?.onboarding_completed) {
+        openOnboarding({});
+      }
       try {
         const n = await generateRecurring();
         if (n) toast(n === 1 ? "1 transazione ricorrente generata" : `${n} transazioni ricorrenti generate`, "success");
@@ -122,6 +126,11 @@ function renderShell() {
         class: "nav-link js-theme-toggle",
         onclick: toggleTheme,
         html: `<span class="nav-link__icon">${icon("moon")}</span><span>Tema</span>`,
+      }),
+      el("button", {
+        class: "nav-link",
+        onclick: () => openOnboarding({}),
+        html: `<span class="nav-link__icon">${icon("lightbulb")}</span><span>Tutorial</span>`,
       }),
       el("button", {
         class: "nav-link",
