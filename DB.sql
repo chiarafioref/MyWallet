@@ -1,8 +1,10 @@
--- 0. EXTENSIONS
+-- Schema completo di MyWallet. Idempotente: può essere rieseguito in sicurezza.
+
+-- 0. ESTENSIONI
 create extension if not exists "pgcrypto";      -- gen_random_uuid()
 
 
--- 1. UTILITY FUNCTION: auto-update of updated_at
+-- 1. FUNZIONE DI UTILITÀ: aggiornamento automatico di updated_at
 create or replace function public.handle_updated_at()
 returns trigger
 language plpgsql
@@ -14,7 +16,7 @@ end;
 $$;
 
 
--- 2. USER PROFILES
+-- 2. PROFILI UTENTE
 create table if not exists public.profiles (
   id          uuid primary key references auth.users(id) on delete cascade,
   first_name  text,
@@ -31,8 +33,7 @@ create trigger trg_profiles_updated_at
   for each row execute function public.handle_updated_at();
 
 
--- 3. CATEGORIES (default + custom)
--- kind = 'expense' | 'income'
+-- 3. CATEGORIE (predefinite + personalizzate)
 create table if not exists public.categories (
   id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
@@ -48,7 +49,7 @@ create table if not exists public.categories (
 create index if not exists idx_categories_user on public.categories(user_id);
 
 
--- Seed the default categories for a new user.
+-- Categorie predefinite di un nuovo utente (i nomi coincidono con assets/js/categories.js).
 create or replace function public.seed_default_categories(p_user_id uuid)
 returns void
 language plpgsql
@@ -59,22 +60,22 @@ begin
   insert into public.categories (user_id, name, kind, is_default)
   select p_user_id, c, 'expense', true
   from unnest(array[
-    'CASA', 'SPESA', 'RISTORANTI', 'BAR', 'TRASPORTI', 'CARBURANTE',
-    'SPESE AUTO', 'UTENZE', 'SHOPPING', 'SPORT', 'INTRATTENIMENTO',
-    'SALUTE', 'ISTRUZIONE', 'VIAGGI', 'REGALI', 'TASSE',
-    'RATE FINANZIAMENTI', 'ALTRO'
+    'Casa', 'Spesa', 'Ristoranti', 'Bar', 'Trasporti', 'Carburante',
+    'Spese auto', 'Utenze', 'Shopping', 'Sport', 'Intrattenimento',
+    'Salute', 'Istruzione', 'Viaggi', 'Regali', 'Tasse',
+    'Rate finanziamenti', 'Altro'
   ]) as c
   on conflict (user_id, name, kind) do nothing;
 
   insert into public.categories (user_id, name, kind, is_default)
   select p_user_id, c, 'income', true
-  from unnest(array['STIPENDIO', 'RIMBORSO', 'REGALI', 'ALTRO']) as c
+  from unnest(array['Stipendio', 'Rimborso', 'Regali', 'Altro']) as c
   on conflict (user_id, name, kind) do nothing;
 end;
 $$;
 
 
--- 4. TRIGGER: create profile + categories on signup
+-- 4. TRIGGER: profilo e categorie creati alla registrazione
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -101,9 +102,7 @@ create trigger on_auth_user_created
   for each row execute function public.handle_new_user();
 
 
--- 5. TRANSACTIONS
--- type = 'ENTRATA' (+) | 'USCITA' (-)
--- payment_method = 'CONTANTI' | 'CARTA'
+-- 5. TRANSAZIONI
 create table if not exists public.transactions (
   id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null references auth.users(id) on delete cascade,
@@ -117,13 +116,11 @@ create table if not exists public.transactions (
   payment_method  text not null default 'CARTA' check (payment_method in ('CONTANTI', 'CARTA')),
   is_recurring    boolean not null default false,
   recurring_day   smallint check (recurring_day between 1 and 31),
-  -- optional date after which the recurrence stops generating transactions
+  -- data oltre la quale la ricorrenza smette di generare transazioni
   recurring_end   date,
-  -- if set, this row is a copy generated from a recurring transaction
+  -- valorizzato sulle copie generate da una transazione ricorrente
   recurring_parent_id uuid references public.transactions(id) on delete set null,
-  -- link to a savings goal (RISPARMI section)
   savings_goal_id uuid,
-  -- link to a future-expense set-aside (SPESE FUTURE section)
   future_expense_id uuid,
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now()
@@ -140,8 +137,7 @@ create trigger trg_transactions_updated_at
   for each row execute function public.handle_updated_at();
 
 
--- 6. BUDGETS (monthly, per category)
--- The budget repeats every month; usage is computed from the transactions.
+-- 6. BUDGET mensili per categoria (l'utilizzo è calcolato dalle transazioni)
 create table if not exists public.budgets (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,
@@ -160,7 +156,7 @@ create trigger trg_budgets_updated_at
   for each row execute function public.handle_updated_at();
 
 
--- 7. SAVINGS (goals + contributions)
+-- 7. RISPARMI (obiettivi + versamenti)
 create table if not exists public.savings_goals (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null references auth.users(id) on delete cascade,
@@ -194,7 +190,7 @@ create index if not exists idx_savings_contrib_user on public.savings_contributi
 create index if not exists idx_savings_contrib_goal on public.savings_contributions(savings_goal_id);
 
 
--- 8. FUTURE EXPENSES (set-asides + paid quotas)
+-- 8. SPESE FUTURE (accantonamenti + quote versate)
 create table if not exists public.future_expenses (
   id             uuid primary key default gen_random_uuid(),
   user_id        uuid not null references auth.users(id) on delete cascade,
@@ -228,10 +224,9 @@ create index if not exists idx_future_contrib_user on public.future_expense_cont
 create index if not exists idx_future_contrib_fe   on public.future_expense_contributions(future_expense_id);
 
 
--- 8b. SUBSCRIPTIONS / RECURRING EXPENSES (streaming, gyms, insurance…)
--- frequency = 'MENSILE' | 'ANNUALE' | 'PERSONALIZZATA' (every interval_months months)
--- Promo: amount = current (promotional) price, regular_amount = full price,
---        promo_end_date = date from which regular_amount applies.
+-- 8b. ABBONAMENTI
+-- PERSONALIZZATA = ogni interval_months mesi.
+-- Promozione: amount è il prezzo attuale, regular_amount quello pieno applicato da promo_end_date.
 create table if not exists public.subscriptions (
   id               uuid primary key default gen_random_uuid(),
   user_id          uuid not null references auth.users(id) on delete cascade,
@@ -261,10 +256,8 @@ create trigger trg_subscriptions_updated_at
   for each row execute function public.handle_updated_at();
 
 
--- 8c. MONEY TRANSFERS (moves between payment methods)
--- A transfer moves money from one method to another (e.g. a cash withdrawal):
--- it is neither income nor expense and does not affect statistics or budgets. It
--- only changes how the balance is split across methods; total wealth is unchanged.
+-- 8c. TRASFERIMENTI tra metodi di pagamento (es. prelievo)
+-- Non sono né entrate né uscite: cambiano solo la ripartizione del saldo tra i metodi.
 create table if not exists public.transfers (
   id             uuid primary key default gen_random_uuid(),
   user_id        uuid not null references auth.users(id) on delete cascade,
@@ -286,27 +279,15 @@ create trigger trg_transfers_updated_at
   before update on public.transfers
   for each row execute function public.handle_updated_at();
 
--- Expenses generated by a subscription are ordinary transactions linked here.
+-- Gli addebiti degli abbonamenti sono normali transazioni collegate qui (la colonna è aggiunta
+-- dopo perché la tabella subscriptions è creata dopo transactions).
 alter table public.transactions
   add column if not exists subscription_id uuid references public.subscriptions(id) on delete set null;
--- recurrence end (for existing installations)
-alter table public.transactions
-  add column if not exists recurring_end date;
 create index if not exists idx_transactions_subscription on public.transactions(subscription_id);
-
--- links to savings goals / future expenses (for existing installations)
-alter table public.transactions add column if not exists savings_goal_id uuid;
-alter table public.transactions add column if not exists future_expense_id uuid;
 create index if not exists idx_transactions_savings_goal on public.transactions(savings_goal_id);
 
--- A savings goal's target amount is optional.
-alter table public.savings_goals alter column target_amount drop not null;
-alter table public.savings_goals drop constraint if exists savings_goals_target_amount_check;
-alter table public.savings_goals
-  add constraint savings_goals_target_amount_check check (target_amount is null or target_amount > 0);
 
-
--- 9. TRIPS (shared group wallets)
+-- 9. VIAGGI (portafogli condivisi)
 create table if not exists public.trips (
   id          uuid primary key default gen_random_uuid(),
   owner_id    uuid not null references auth.users(id) on delete cascade,
@@ -352,12 +333,11 @@ create table if not exists public.trip_expenses (
   id            uuid primary key default gen_random_uuid(),
   trip_id       uuid not null references public.trips(id) on delete cascade,
   created_by    uuid not null references auth.users(id) on delete cascade,
-  -- who actually paid the expense (for the reimbursement calculation);
-  -- if null, it is assumed to be whoever recorded it (created_by)
+  -- chi ha pagato davvero la spesa; se null si assume created_by
   paid_by       uuid references auth.users(id) on delete set null,
   title         text not null,
   amount        numeric(12,2) not null check (amount > 0),
-  category_name text not null default 'ALTRO',
+  category_name text not null default 'Altro',
   type          text not null default 'USCITA' check (type in ('ENTRATA', 'USCITA')),
   expense_date  date not null default current_date,
   description   text,
@@ -366,8 +346,6 @@ create table if not exists public.trip_expenses (
 );
 
 create index if not exists idx_trip_expenses_trip on public.trip_expenses(trip_id);
--- "paid by" for existing installations
-alter table public.trip_expenses add column if not exists paid_by uuid;
 
 drop trigger if exists trg_trip_expenses_updated_at on public.trip_expenses;
 create trigger trg_trip_expenses_updated_at
@@ -375,7 +353,7 @@ create trigger trg_trip_expenses_updated_at
   for each row execute function public.handle_updated_at();
 
 
--- Helper functions (SECURITY DEFINER) to avoid recursion in the RLS policies.
+-- Funzioni SECURITY DEFINER usate dalle policy RLS per evitare la ricorsione.
 create or replace function public.is_trip_member(p_trip_id uuid)
 returns boolean
 language sql
@@ -402,7 +380,7 @@ as $$
   );
 $$;
 
--- Join a trip via its unique key.
+-- Adesione a un viaggio tramite la sua chiave.
 create or replace function public.join_trip(p_key text)
 returns uuid
 language plpgsql
@@ -452,7 +430,7 @@ alter table public.trip_categories              enable row level security;
 alter table public.trip_expenses                enable row level security;
 
 
--- ---- PROFILES ---------------------------------------------------------------
+-- ---- PROFILI ----
 drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own" on public.profiles
   for select using (id = auth.uid());
@@ -470,61 +448,61 @@ create policy "profiles_delete_own" on public.profiles
   for delete using (id = auth.uid());
 
 
--- ---- CATEGORIES ------------------------------------------------------------
+-- ---- CATEGORIE ----
 drop policy if exists "categories_all_own" on public.categories;
 create policy "categories_all_own" on public.categories
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- TRANSACTIONS ---------------------------------------------------------
+-- ---- TRANSAZIONI ----
 drop policy if exists "transactions_all_own" on public.transactions;
 create policy "transactions_all_own" on public.transactions
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- TRANSFERS ----------------------------------------------------------
+-- ---- TRASFERIMENTI ----
 drop policy if exists "transfers_all_own" on public.transfers;
 create policy "transfers_all_own" on public.transfers
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- BUDGETS ------------------------------------------------------------
+-- ---- BUDGET ----
 drop policy if exists "budgets_all_own" on public.budgets;
 create policy "budgets_all_own" on public.budgets
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- SUBSCRIPTIONS -------------------------------------
+-- ---- ABBONAMENTI ----
 drop policy if exists "subscriptions_all_own" on public.subscriptions;
 create policy "subscriptions_all_own" on public.subscriptions
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- SAVINGS GOALS ----------------------------------------------------
+-- ---- OBIETTIVI DI RISPARMIO ----
 drop policy if exists "savings_goals_all_own" on public.savings_goals;
 create policy "savings_goals_all_own" on public.savings_goals
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- SAVINGS CONTRIBUTIONS ------------------------------------------
+-- ---- VERSAMENTI DI RISPARMIO ----
 drop policy if exists "savings_contrib_all_own" on public.savings_contributions;
 create policy "savings_contrib_all_own" on public.savings_contributions
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- FUTURE EXPENSES ----------------------------------------------
+-- ---- SPESE FUTURE ----
 drop policy if exists "future_expenses_all_own" on public.future_expenses;
 create policy "future_expenses_all_own" on public.future_expenses
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- FUTURE EXPENSE CONTRIBUTIONS ------------------------------
+-- ---- QUOTE DELLE SPESE FUTURE ----
 drop policy if exists "future_contrib_all_own" on public.future_expense_contributions;
 create policy "future_contrib_all_own" on public.future_expense_contributions
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 
--- ---- TRIPS -------------------------------------------------------
+-- ---- VIAGGI ----
 drop policy if exists "trips_select_member" on public.trips;
 create policy "trips_select_member" on public.trips
   for select using (owner_id = auth.uid() or public.is_trip_member(id));
@@ -542,12 +520,12 @@ create policy "trips_delete_owner" on public.trips
   for delete using (owner_id = auth.uid());
 
 
--- ---- TRIP MEMBERS ---------------------------------------------
+-- ---- PARTECIPANTI AI VIAGGI ----
 drop policy if exists "trip_members_select" on public.trip_members;
 create policy "trip_members_select" on public.trip_members
   for select using (public.is_trip_member(trip_id));
 
--- join only via the join_trip() function or for yourself
+-- ci si può aggiungere solo per sé stessi (o tramite join_trip())
 drop policy if exists "trip_members_insert_self" on public.trip_members;
 create policy "trip_members_insert_self" on public.trip_members
   for insert with check (user_id = auth.uid());
@@ -560,7 +538,7 @@ create policy "trip_members_delete_self_or_owner" on public.trip_members
   );
 
 
--- ---- TRIP CATEGORIES ---------------------------------------
+-- ---- CATEGORIE DEI VIAGGI ----
 drop policy if exists "trip_categories_select" on public.trip_categories;
 create policy "trip_categories_select" on public.trip_categories
   for select using (public.is_trip_member(trip_id));
@@ -574,12 +552,12 @@ create policy "trip_categories_delete" on public.trip_categories
   for delete using (created_by = auth.uid());
 
 
--- ---- TRIP EXPENSES ---------------------------------------
+-- ---- SPESE DEI VIAGGI ----
 drop policy if exists "trip_expenses_select" on public.trip_expenses;
 create policy "trip_expenses_select" on public.trip_expenses
   for select using (public.is_trip_member(trip_id));
 
--- insert allowed only if a member AND the trip is ATTIVO
+-- inserimento solo per i partecipanti e solo a viaggio ATTIVO
 drop policy if exists "trip_expenses_insert" on public.trip_expenses;
 create policy "trip_expenses_insert" on public.trip_expenses
   for insert with check (
@@ -588,7 +566,7 @@ create policy "trip_expenses_insert" on public.trip_expenses
     and public.is_trip_active(trip_id)
   );
 
--- update/delete only your own expense and only while the trip is ATTIVO
+-- modifica e cancellazione solo delle proprie spese, a viaggio ATTIVO
 drop policy if exists "trip_expenses_update_own" on public.trip_expenses;
 create policy "trip_expenses_update_own" on public.trip_expenses
   for update using (created_by = auth.uid() and public.is_trip_active(trip_id))
@@ -599,19 +577,9 @@ create policy "trip_expenses_delete_own" on public.trip_expenses
   for delete using (created_by = auth.uid() and public.is_trip_active(trip_id));
 
 
--- 11. REALTIME (channel / publication)
--- Enables broadcasting of table changes. In the JS client:
---
---   const channel = supabaseClient
---     .channel('mywallet')
---     .on('postgres_changes',
---         { event: '*', schema: 'public', table: 'transactions',
---           filter: `user_id=eq.${userId}` },
---         payload => { /* update UI */ })
---     .subscribe();
---
--- Idempotent: adds to the publication only the tables not already present
--- (avoids "relation is already member of publication supabase_realtime").
+-- 11. REALTIME
+-- Aggiunge alla publication solo le tabelle non ancora presenti, così lo script resta
+-- rieseguibile (evita "relation is already member of publication supabase_realtime").
 do $$
 declare
   t text;
@@ -622,7 +590,6 @@ declare
     'trips', 'trip_members', 'trip_categories', 'trip_expenses', 'profiles'
   ];
 begin
-  -- create the publication if missing (usually already present on Supabase)
   if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     create publication supabase_realtime;
   end if;
@@ -637,15 +604,14 @@ begin
   end loop;
 end $$;
 
--- Needed to receive the full "old" values in UPDATE/DELETE events.
+-- Necessario per ricevere i valori "old" completi negli eventi UPDATE/DELETE.
 alter table public.trip_expenses replica identity full;
 alter table public.transactions replica identity full;
 alter table public.transfers replica identity full;
 
 
--- 12. FUNCTION: delete account (SETTINGS section)
--- Removes the user's data. Deleting the row from auth.users must be done from
--- the client with supabaseClient.auth.admin or via an Edge Function with service_role.
+-- 12. FUNZIONE: eliminazione dei dati dell'utente (sezione Impostazioni).
+-- La riga in auth.users non viene rimossa: richiederebbe la service_role.
 create or replace function public.delete_my_data()
 returns void
 language plpgsql
@@ -655,9 +621,8 @@ as $$
 declare
   v_uid uuid := auth.uid();
 begin
-  -- trips owned by the user (cascades to members/categories/expenses)
+  -- viaggi creati dall'utente (cascade su partecipanti, categorie e spese)
   delete from public.trips where owner_id = v_uid;
-  -- remove the user from other people's trips
   delete from public.trip_members where user_id = v_uid;
 
   delete from public.future_expense_contributions where user_id = v_uid;
@@ -674,12 +639,9 @@ end;
 $$;
 
 
--- 13. TRIGGER: a transfer cannot move more money than is available on the
--- source payment method. The available balance mirrors the client-side
--- selectors.paymentMethodBalances():
---   transactions of that method (ENTRATA +, USCITA -)
---   + transfers received on that method
---   - transfers sent from that method   (the row being updated is excluded)
+-- 13. TRIGGER: un trasferimento non può superare il saldo del metodo di origine.
+-- Il saldo replica selectors.paymentMethodBalances() del client: transazioni del metodo
+-- + trasferimenti ricevuti − trasferimenti inviati (esclusa la riga in modifica).
 create or replace function public.check_transfer_balance()
 returns trigger
 language plpgsql
@@ -703,13 +665,11 @@ begin
   from public.transactions
   where user_id = v_uid and payment_method = v_from;
 
-  -- transfers already received on this method (excluding the row being updated)
   select coalesce(sum(amount), 0) into v_in
   from public.transfers
   where user_id = v_uid and to_method = v_from
     and (v_exclude is null or id <> v_exclude);
 
-  -- transfers already sent from this method (excluding the row being updated)
   select coalesce(sum(amount), 0) into v_out
   from public.transfers
   where user_id = v_uid and from_method = v_from
@@ -733,10 +693,7 @@ create trigger trg_transfers_balance
   for each row execute function public.check_transfer_balance();
 
 
--- 14. ONBOARDING
--- Tutorial introduttivo mostrato al primo accesso; persistito lato server
--- così lo stato segue l'utente su ogni dispositivo.
+-- 14. TUTORIAL: stato salvato lato server, così segue l'utente su ogni dispositivo.
 alter table public.profiles
   add column if not exists onboarding_completed boolean not null default false;
 
--- END

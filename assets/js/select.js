@@ -1,21 +1,26 @@
-// Custom select: replaces the native dropdown's look with a modern, animated
-// panel while keeping the real <select> in the DOM (for form serialization,
-// validation and change/input events).
-//   enhanceSelect(nativeSelectElement)
+// Select personalizzata: sostituisce l'aspetto del menu nativo mantenendo il vero <select>
+// nel DOM, così serializzazione del form, validazione ed eventi change/input restano invariati.
 import { el } from "./utils.js";
 import { icon } from "./icons.js";
 
-let current = null; // { root, close } of the currently open menu
+let current = null;
 
 function closeCurrent() {
-  if (current) { current.close(); current = null; }
+  if (current) {
+    current.close();
+    current = null;
+  }
 }
 
 document.addEventListener("click", (e) => {
   if (current && !current.root.contains(e.target) && !current.menu.contains(e.target)) closeCurrent();
 });
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && current) { const t = current.trigger; closeCurrent(); t?.focus(); }
+  if (e.key === "Escape" && current) {
+    const t = current.trigger;
+    closeCurrent();
+    t?.focus();
+  }
 });
 document.addEventListener("app:closepopups", closeCurrent);
 
@@ -31,14 +36,20 @@ export function enhanceSelect(select) {
   select.setAttribute("aria-hidden", "true");
 
   const valueEl = el("span", { class: "sel__value" });
-  const trigger = el("button", {
-    type: "button", class: "sel__trigger",
-    "aria-haspopup": "listbox", "aria-expanded": "false",
-  }, [valueEl, el("span", { class: "sel__chevron", html: icon("chevronDown", { size: 16 }) })]);
+  const trigger = el(
+    "button",
+    {
+      type: "button",
+      class: "sel__trigger",
+      "aria-haspopup": "listbox",
+      "aria-expanded": "false",
+    },
+    [valueEl, el("span", { class: "sel__chevron", html: icon("chevronDown", { size: 16 }) })]
+  );
   const menu = el("div", { class: "sel__menu", role: "listbox" });
   root.append(trigger, menu);
 
-  let opts = [];   // [{ el, value }]
+  let opts = [];
   let active = -1;
   let openedAt = 0;
 
@@ -111,13 +122,15 @@ export function enhanceSelect(select) {
     syncTrigger();
     root.classList.add("is-open");
     trigger.setAttribute("aria-expanded", "true");
-    // Move the menu out of the modal's flow (it has a transform) so it isn't clipped.
+    // Il menu esce dalla modale (che ha un transform) per non essere tagliato.
     document.body.appendChild(menu);
     position();
-    // Force a reflow before starting the entrance transition.
     void menu.offsetWidth;
     menu.classList.add("is-open");
-    active = Math.max(0, opts.findIndex((o) => o.value === select.value));
+    active = Math.max(
+      0,
+      opts.findIndex((o) => o.value === select.value)
+    );
     highlight();
     openedAt = Date.now();
     current = { root, menu, trigger, close };
@@ -134,8 +147,9 @@ export function enhanceSelect(select) {
     if (current && current.root === root) current = null;
   }
   const onScroll = (e) => {
-    if (Date.now() - openedAt < 180) return;   // ignore the opening settle
-    if (e.target && e.target.nodeType === 1 && menu.contains(e.target)) return; // internal scroll
+    // Ignora lo scroll causato dall'apertura e quello interno al menu.
+    if (Date.now() - openedAt < 180) return;
+    if (e.target && e.target.nodeType === 1 && menu.contains(e.target)) return;
     close();
   };
 
@@ -154,19 +168,28 @@ export function enhanceSelect(select) {
     } else if (e.key === "Tab" && isOpen) {
       close();
     } else if (/^[a-z0-9]$/i.test(e.key) && isOpen) {
-      const i = opts.findIndex((o, idx) => idx > active && o.el.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase()));
-      const j = i > -1 ? i : opts.findIndex((o) => o.el.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase()));
-      if (j > -1) { active = j; highlight(); }
+      const i = opts.findIndex(
+        (o, idx) => idx > active && o.el.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase())
+      );
+      const j =
+        i > -1 ? i : opts.findIndex((o) => o.el.textContent.trim().toLowerCase().startsWith(e.key.toLowerCase()));
+      if (j > -1) {
+        active = j;
+        highlight();
+      }
     }
   });
   menu.addEventListener("mousemove", (e) => {
     const opt = e.target.closest(".sel__opt");
     if (!opt) return;
     const i = opts.findIndex((o) => o.el === opt);
-    if (i > -1 && i !== active) { active = i; highlight(); }
+    if (i > -1 && i !== active) {
+      active = i;
+      highlight();
+    }
   });
 
-  // Programmatic <select> updates (form rebuild, filter reset, showIf).
+  // Aggiornamenti programmatici del <select> (reset filtri, campi condizionali).
   select.addEventListener("change", syncTrigger);
   select.addEventListener("sel:sync", syncTrigger);
 

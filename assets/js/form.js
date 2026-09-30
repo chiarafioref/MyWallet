@@ -1,23 +1,23 @@
-// Helper to build forms with real-time validation.
 import { el } from "./utils.js";
 import { enhanceSelect } from "./select.js";
 import { enhanceAutocomplete } from "./autocomplete.js";
 
-// Two-option fields rendered as a segmented control instead of a dropdown.
+// Campi a due opzioni resi come controllo segmentato invece che come menu a tendina.
 const SEG_FIELDS = new Set(["type", "payment_method", "theme", "kind"]);
 
-// fields: [{ name, label, type, required, value, options, min, step, placeholder, hint, showIf, suggestions }]
-//   showIf: "checkboxName"                       -> visible when that toggle is on
-//   showIf: { field: "frequency", value: "X" }   -> visible when that field equals X
-//                                                    (value may also be an array)
-//   a select's options may be grouped: { label: "Group", options: [...] }
-//   suggestions: string[]  -> text input only; shows a filterable dropdown of candidates
+/**
+ * Costruisce un form con validazione in tempo reale.
+ * Ogni campo: { name, label, type, required, value, options, min, step, placeholder, hint, showIf, suggestions }
+ *   showIf: "nomeCheckbox"                 -> visibile quando il toggle è attivo
+ *   showIf: { field: "x", value: "A" | [] } -> visibile quando il campo x ha uno dei valori
+ *   options: supporta gruppi { label, options: [...] }
+ *   suggestions: string[]                  -> suggerimenti per i campi di testo
+ */
 export function buildForm(fields, { submitLabel = "Salva", onSubmit }) {
   const form = el("form", { class: "app-form", novalidate: true });
   const conditional = [];
 
   fields.forEach((f, idx) => {
-    // Toggle for boolean fields.
     if (f.type === "checkbox") {
       const node = switchField(f);
       node.style.setProperty("--i", idx);
@@ -25,10 +25,15 @@ export function buildForm(fields, { submitLabel = "Salva", onSubmit }) {
       return;
     }
 
-    // Binary choice: segmented control instead of a dropdown.
-    const flatOpts = f.type === "select" && Array.isArray(f.options) && !f.options.some((o) => o && o.options) ? f.options : null;
-    const autoSeg = f.type === "select" && flatOpts && flatOpts.length === 2 && !f.showIf
-      && (f.segmented !== false) && SEG_FIELDS.has(f.name);
+    const flatOpts =
+      f.type === "select" && Array.isArray(f.options) && !f.options.some((o) => o && o.options) ? f.options : null;
+    const autoSeg =
+      f.type === "select" &&
+      flatOpts &&
+      flatOpts.length === 2 &&
+      !f.showIf &&
+      f.segmented !== false &&
+      SEG_FIELDS.has(f.name);
     if (f.type === "segmented" || f.segmented === true || autoSeg) {
       const node = segmentedField({ ...f, options: flatOpts || f.options });
       node.style.setProperty("--i", idx);
@@ -48,11 +53,7 @@ export function buildForm(fields, { submitLabel = "Salva", onSubmit }) {
 
     let control;
     if (f.type === "select") {
-      control = el(
-        "select",
-        { name: f.name, required: f.required || null },
-        selectChildren(f.options || [], f.value)
-      );
+      control = el("select", { name: f.name, required: f.required || null }, selectChildren(f.options || [], f.value));
     } else if (f.type === "textarea") {
       control = el("textarea", { name: f.name, rows: 3, placeholder: f.placeholder ?? null }, f.value ?? "");
     } else {
@@ -73,20 +74,26 @@ export function buildForm(fields, { submitLabel = "Salva", onSubmit }) {
     if (f.showIf) conditional.push({ field, control, showIf: f.showIf });
   });
 
-  const submit = el("button", { type: "submit", class: "btn btn--primary btn--block", style: `--i:${fields.length}` }, submitLabel);
+  const submit = el(
+    "button",
+    { type: "submit", class: "btn btn--primary btn--block", style: `--i:${fields.length}` },
+    submitLabel
+  );
   form.append(submit);
 
-  // Conditional fields: show/hide based on a toggle or another field's value.
   for (const { field, control, showIf } of conditional) {
     const isToggle = typeof showIf === "string";
     const triggerName = isToggle ? showIf : showIf.field;
     const trigger = form.querySelector(`[name="${triggerName}"]`);
-    const wanted = isToggle ? null : (Array.isArray(showIf.value) ? showIf.value : [showIf.value]);
+    const wanted = isToggle ? null : Array.isArray(showIf.value) ? showIf.value : [showIf.value];
     const matches = () => (isToggle ? !!trigger?.checked : wanted.includes(trigger?.value));
     const sync = () => {
       const on = matches();
       field.classList.toggle("is-visible", on);
-      if (!on && control.type !== "checkbox") { control.value = ""; validate(control); }
+      if (!on && control.type !== "checkbox") {
+        control.value = "";
+        validate(control);
+      }
     };
     trigger?.addEventListener("change", sync);
     trigger?.addEventListener("input", sync);
@@ -118,25 +125,24 @@ export function buildForm(fields, { submitLabel = "Salva", onSubmit }) {
   return form;
 }
 
-// <select> options, with group support ({ label, options: [...] }).
 function selectChildren(options, value) {
-  const opt = (o) =>
-    el("option", { value: o.value, selected: String(o.value) === String(value) || null }, o.label);
-  return options.map((o) =>
-    o.options ? el("optgroup", { label: o.label }, o.options.map(opt)) : opt(o)
-  );
+  const opt = (o) => el("option", { value: o.value, selected: String(o.value) === String(value) || null }, o.label);
+  return options.map((o) => (o.options ? el("optgroup", { label: o.label }, o.options.map(opt)) : opt(o)));
 }
 
-// Segmented control for a few-option choice (e.g. Uscita / Entrata).
-// A real hidden input holds the value and propagates change/input events.
+// Il valore è in un input hidden che propaga gli eventi change/input come un campo nativo.
 const SEG_TONE = {
-  USCITA: "out", ENTRATA: "in", expense: "out", income: "in",
-  CARTA: "neutral", CONTANTI: "neutral",
+  USCITA: "out",
+  ENTRATA: "in",
+  expense: "out",
+  income: "in",
+  CARTA: "neutral",
+  CONTANTI: "neutral",
 };
 function segmentedField(f) {
   const opts = f.options;
-  const initial = f.value != null && opts.some((o) => String(o.value) === String(f.value))
-    ? String(f.value) : String(opts[0].value);
+  const initial =
+    f.value != null && opts.some((o) => String(o.value) === String(f.value)) ? String(f.value) : String(opts[0].value);
   const input = el("input", { type: "hidden", name: f.name, value: initial });
 
   const setVal = (v) => {
@@ -151,14 +157,18 @@ function segmentedField(f) {
     input,
     ...opts.map((o) => {
       const tone = o.tone || SEG_TONE[o.value] || "neutral";
-      return el("button", {
-        type: "button",
-        class: `seg-field__btn seg-field__btn--${tone}${String(o.value) === initial ? " is-on" : ""}`,
-        "data-v": String(o.value),
-        role: "radio",
-        "aria-checked": String(String(o.value) === initial),
-        onclick: () => setVal(o.value),
-      }, [el("span", { class: "seg-field__dot" }), el("span", { class: "seg-field__lab", text: o.label })]);
+      return el(
+        "button",
+        {
+          type: "button",
+          class: `seg-field__btn seg-field__btn--${tone}${String(o.value) === initial ? " is-on" : ""}`,
+          "data-v": String(o.value),
+          role: "radio",
+          "aria-checked": String(String(o.value) === initial),
+          onclick: () => setVal(o.value),
+        },
+        [el("span", { class: "seg-field__dot" }), el("span", { class: "seg-field__lab", text: o.label })]
+      );
     }),
   ]);
 
@@ -169,7 +179,6 @@ function segmentedField(f) {
   ]);
 }
 
-// Toggle field: whole <label> clickable, real input hidden, animated track + thumb.
 function switchField(f) {
   const input = el("input", {
     class: "switch__input",
@@ -202,10 +211,8 @@ function validate(control) {
   else if (control.type === "number" && v !== "") {
     const n = Number(v);
     if (Number.isNaN(n)) msg = "Numero non valido";
-    else if (control.min !== "" && control.min != null && n < Number(control.min))
-      msg = `Valore minimo ${control.min}`;
-  } else if (control.type === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v))
-    msg = "Email non valida";
+    else if (control.min !== "" && control.min != null && n < Number(control.min)) msg = `Valore minimo ${control.min}`;
+  } else if (control.type === "email" && v && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) msg = "Email non valida";
   wrap?.classList.toggle("has-error", !!msg);
   if (err) err.textContent = msg;
   return !msg;

@@ -1,31 +1,23 @@
-// Automatic generation of subscription expenses.
-// Every active subscription (not paused, within start/end) generates a USCITA
-// transaction for each past due date up to today; next_payment_date is advanced.
-// The generated rows are ordinary `transactions` linked via subscription_id, so
-// they flow into history, budgets, statistics and analysis.
+// Addebiti automatici degli abbonamenti: per ogni scadenza passata di un abbonamento attivo
+// viene registrata una transazione USCITA (collegata tramite subscription_id) e
+// next_payment_date avanza alla prima scadenza futura.
 import { supabaseClient } from "./supabaseClient.js";
 import { state, selectors } from "./store.js";
-import { dateISO, normalizeTitle } from "./utils.js";
+import { dateISO, normalizeTitle, parseDate } from "./utils.js";
 
 export async function generateSubscriptions() {
   if (!state.subscriptions.length) return 0;
 
   const today = dateISO(new Date());
   const toInsert = [];
-  const advance = []; // { id, next_payment_date }
+  const advance = [];
 
   for (const sub of state.subscriptions) {
     if (sub.is_paused) continue;
     const months = selectors.subIntervalMonths(sub);
+    const covered = new Set(state.transactions.filter((t) => t.subscription_id === sub.id).map((t) => t.tx_date));
 
-    // Due dates already covered by this subscription.
-    const covered = new Set(
-      state.transactions
-        .filter((t) => t.subscription_id === sub.id)
-        .map((t) => t.tx_date)
-    );
-
-    let cursor = new Date(sub.next_payment_date);
+    let cursor = parseDate(sub.next_payment_date);
     let guard = 0;
     let lastPaid = null;
 
@@ -64,15 +56,13 @@ export async function generateSubscriptions() {
 
   let inserted = 0;
   if (toInsert.length) {
+    // In caso di errore le scadenze non devono avanzare, altrimenti gli addebiti andrebbero persi.
     const { data, error } = await supabaseClient.from("transactions").insert(toInsert).select();
-    if (error) {
-      console.warn("[subscriptions] generation failed:", error.message);
-    } else {
-      for (const row of data || []) {
-        if (!state.transactions.some((t) => t.id === row.id)) state.transactions.unshift(row);
-      }
-      inserted = (data || []).length;
+    if (error) throw error;
+    for (const row of data || []) {
+      if (!state.transactions.some((t) => t.id === row.id)) state.transactions.unshift(row);
     }
+    inserted = (data || []).length;
   }
 
   for (const a of advance) {

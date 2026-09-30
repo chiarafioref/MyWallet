@@ -1,28 +1,17 @@
-// Supabase Edge Function: chat-ai
-// =============================================================================
-// Authenticated proxy to the Mistral AI chat-completions API.
-//
-// The Mistral API key lives ONLY here, as the Supabase Secret MISTRAL_API_KEY,
-// and is never shipped to the browser. The frontend calls this function with:
-//
-//   supabaseClient.functions.invoke("chat-ai", {
-//     body: { messages, temperature, jsonMode }
-//   })
-//
-// verify_jwt = true (see supabase/config.toml): only authenticated users can
-// invoke it; functions.invoke() attaches the current session JWT automatically.
-// =============================================================================
+// Edge Function "chat-ai": proxy autenticato verso l'API chat completions di Mistral.
+// La API key è solo qui, come Secret MISTRAL_API_KEY. Con verify_jwt = true
+// (supabase/config.toml) la piattaforma accetta solo richieste con un JWT valido.
 
 const MISTRAL_ENDPOINT = "https://api.mistral.ai/v1/chat/completions";
 
-// Model: overridable via the optional MISTRAL_MODEL secret, else a sane default.
-const DEFAULT_MODEL = Deno.env.get("MISTRAL_MODEL") ?? "mistral-small-latest";
+// Il modello è deciso dal server (Secret MISTRAL_MODEL), mai dal client, per non esporre
+// il progetto all'uso di modelli più costosi.
+const MODEL = Deno.env.get("MISTRAL_MODEL") ?? "mistral-small-latest";
 
-// CORS origin: set the ALLOWED_ORIGIN secret to your site URL in production
-// (e.g. https://<user>.github.io). Falls back to "*" for local development.
+// In produzione impostare ALLOWED_ORIGIN all'URL del sito; "*" solo per lo sviluppo locale.
 const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
 
-// Input limits (defence against abuse / runaway cost).
+// Limiti sull'input contro abusi e costi imprevisti.
 const MAX_MESSAGES = 16;
 const MAX_TOTAL_CHARS = 12_000;
 
@@ -30,7 +19,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Vary": "Origin",
+  Vary: "Origin",
 };
 
 const json = (body: unknown, status = 200): Response =>
@@ -47,29 +36,41 @@ interface RequestPayload {
   messages?: ChatMessage[];
   temperature?: number;
   jsonMode?: boolean;
-  model?: string;
 }
 
 const VALID_ROLES = new Set(["system", "user", "assistant"]);
 
+function jwtClaims(token: string): Record<string, unknown> | null {
+  try {
+    const payload = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    return JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, "=")));
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
-  // 1. CORS preflight.
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
 
-  // 2. Auth header present (the platform already verified the JWT).
-  if (!(req.headers.get("Authorization") ?? "").toLowerCase().startsWith("bearer ")) {
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!auth.toLowerCase().startsWith("bearer ")) {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  // 3. Secret configured?
+  // La firma è già verificata dalla piattaforma: qui si leggono solo i claim.
+  // Sono ammessi solo utenti registrati, non gli account demo (anonimi) né la chiave pubblica.
+  const claims = jwtClaims(auth.slice(7));
+  if (claims?.role !== "authenticated" || claims?.is_anonymous === true) {
+    return json({ error: "Forbidden" }, 403);
+  }
+
   const apiKey = Deno.env.get("MISTRAL_API_KEY");
   if (!apiKey) {
-    console.error("[chat-ai] MISTRAL_API_KEY secret is not configured");
+    console.error("[chat-ai] Secret MISTRAL_API_KEY non configurato");
     return json({ error: "Service unavailable" }, 503);
   }
 
-  // 4. Parse and validate the request body.
   let payload: RequestPayload;
   try {
     payload = await req.json();
@@ -77,7 +78,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: "Invalid JSON body" }, 400);
   }
 
-  const { messages, temperature, jsonMode, model } = payload;
+  const { messages, temperature, jsonMode } = payload;
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return json({ error: "`messages` must be a non-empty array" }, 400);
@@ -97,14 +98,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
     return json({ error: "Prompt too large" }, 400);
   }
 
-  const temp = typeof temperature === "number" && temperature >= 0 && temperature <= 2
-    ? temperature
-    : 0.3;
-
-  // 5. Call Mistral with the server-side key.
   const body: Record<string, unknown> = {
-    model: typeof model === "string" && model.length <= 60 ? model : DEFAULT_MODEL,
-    temperature: temp,
+    model: MODEL,
+    temperature: typeof temperature === "number" && temperature >= 0 && temperature <= 2 ? temperature : 0.3,
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
   };
   if (jsonMode === true) body.response_format = { type: "json_object" };
@@ -120,19 +116,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
       body: JSON.stringify(body),
     });
   } catch (err) {
-    console.error("[chat-ai] upstream request failed:", String(err));
+    console.error("[chat-ai] richiesta a Mistral fallita:", String(err));
     return json({ error: "Upstream request failed" }, 502);
   }
 
   if (!upstream.ok) {
-    // Log the provider detail server-side only; return a generic message.
+    // Il dettaglio dell'errore resta nei log del server; al client un messaggio generico.
     console.error(`[chat-ai] Mistral HTTP ${upstream.status}:`, await upstream.text());
     return json({ error: "AI provider error" }, 502);
   }
 
   const data = await upstream.json();
   const content: string = data?.choices?.[0]?.message?.content ?? "";
-
-  // 6. Minimal response: the frontend only needs { content }.
   return json({ content });
 });

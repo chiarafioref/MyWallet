@@ -1,4 +1,3 @@
-// Dashboard: monthly overview with counters and micro-animations.
 import { state, selectors } from "../store.js";
 import { el, formatMoney, formatDate, animateCounter, emptyState } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
@@ -38,7 +37,7 @@ export function render(container) {
       ]),
     ]),
 
-    // Total balance (hero)
+    // Saldo totale
     el("section", { class: "dash-balance", ...step() }, [
       el("div", { class: "dash-balance__glow" }),
       el("div", { class: "dash-balance__head" }, [
@@ -52,7 +51,9 @@ export function render(container) {
       ]),
       el("strong", {
         class: "dash-balance__value",
-        "data-counter": balance, "data-value": 0, text: formatMoney(0),
+        "data-counter": balance,
+        "data-value": 0,
+        text: formatMoney(0),
       }),
       el("div", { class: "dash-balance__split" }, [
         splitItem("in", "trendingUp", "Entrate", income, deltaLine(income, prevIncome, true)),
@@ -60,17 +61,24 @@ export function render(container) {
       ]),
     ]),
 
-    // Balance by payment method
+    // Saldo per metodo di pagamento
     methodsCard(step()),
 
-    // Stats grid
+    // Indicatori del mese
     el("div", { class: "stat-grid" }, [
-      flowCard(step(), "savings", "trophy", "Risparmi totali", savings, savings > 0 ? el("span", { class: "stat-sub muted", text: "obiettivi in corso" }) : null),
+      flowCard(
+        step(),
+        "savings",
+        "trophy",
+        "Risparmi totali",
+        savings,
+        savings > 0 ? el("span", { class: "stat-sub muted", text: "obiettivi in corso" }) : null
+      ),
       budgetCard(step(), budgetLeft, budgetTotal, budgetUsed, budgetPct),
       futureCard(step(), nextFuture),
     ]),
 
-    // Promo alerts
+    // Avvisi di fine promozione
     ...promoAlerts.map((p, k) =>
       el("section", { class: "card glass promo-alert fade-in", style: `--i:${k}` }, [
         el("strong", {}, [
@@ -83,13 +91,11 @@ export function render(container) {
       ])
     ),
 
-    // Chart + timeline
+    // Grafico e ultimi movimenti
     el("div", { class: "dash-columns" }, [
       el("section", { class: "card glass dash-panel", ...step() }, [
         el("h3", {}, [el("span", { class: "icn-wrap", html: icon("chart", { size: 16 }) }), "Spese per categoria"]),
-        byCat.length
-          ? donutChart(byCat)
-          : emptyState("chart", "Nessuna spesa registrata questo mese"),
+        byCat.length ? donutChart(byCat) : emptyState("chart", "Nessuna spesa registrata questo mese"),
       ]),
       el("section", { class: "card glass dash-panel", ...step() }, [
         el("h3", {}, [el("span", { class: "icn-wrap", html: icon("receipt", { size: 16 }) }), "Ultime transazioni"]),
@@ -99,7 +105,10 @@ export function render(container) {
               { class: "tx-timeline" },
               last5.map((t, k) =>
                 el("li", { class: "tx-timeline__item", style: `--i:${k}` }, [
-                  el("span", { class: `tx-timeline__badge tx-timeline__badge--${t.type === "ENTRATA" ? "in" : "out"}`, html: icon(t.type === "ENTRATA" ? "arrowUp" : "arrowDown", { size: 15 }) }),
+                  el("span", {
+                    class: `tx-timeline__badge tx-timeline__badge--${t.type === "ENTRATA" ? "in" : "out"}`,
+                    html: icon(t.type === "ENTRATA" ? "arrowUp" : "arrowDown", { size: 15 }),
+                  }),
                   el("div", { class: "tx-timeline__body" }, [
                     el("strong", { text: t.title }),
                     el("span", { class: "muted", text: `${t.category_name || ""} · ${formatDate(t.tx_date)}` }),
@@ -117,9 +126,7 @@ export function render(container) {
   ]);
 
   container.append(view);
-  view.querySelectorAll("[data-counter]").forEach((n) =>
-    animateCounter(n, Number(n.dataset.counter))
-  );
+  view.querySelectorAll("[data-counter]").forEach((n) => animateCounter(n, Number(n.dataset.counter)));
 }
 
 function methodsCard(attrs) {
@@ -134,12 +141,24 @@ function methodsCard(attrs) {
     ]);
   return el("section", { class: "card glass dash-methods", ...attrs }, [
     el("div", { class: "dash-methods__head" }, [
-      el("button", { class: "dash-methods__title", onclick: () => { location.hash = "disponibilita"; } }, [
-        el("span", { class: "icn-wrap", html: icon("wallet", { size: 15 }) }),
-        "Disponibilità per metodo",
-        el("span", { class: "icn-wrap", html: icon("chevronRight", { size: 14 }) }),
+      el(
+        "button",
+        {
+          class: "dash-methods__title",
+          onclick: () => {
+            location.hash = "disponibilita";
+          },
+        },
+        [
+          el("span", { class: "icn-wrap", html: icon("wallet", { size: 15 }) }),
+          "Disponibilità per metodo",
+          el("span", { class: "icn-wrap", html: icon("chevronRight", { size: 14 }) }),
+        ]
+      ),
+      el("button", { class: "btn btn--ghost btn--sm", onclick: () => openTransferModal() }, [
+        iconEl("swap", { size: 15 }),
+        "Sposta denaro",
       ]),
-      el("button", { class: "btn btn--ghost btn--sm", onclick: () => openTransferModal() }, [iconEl("swap", { size: 15 }), "Sposta denaro"]),
     ]),
     el("div", { class: "dash-methods__grid" }, [
       method("CARTA", "Carta", "creditCard"),
@@ -178,10 +197,17 @@ function flowCard(attrs, kind, iconName, label, value, sub) {
 function budgetCard(attrs, left, total, used, pct) {
   const level = pct >= 100 ? "danger" : pct >= 80 ? "warn" : "ok";
   return statShell(attrs, "budget", "wallet", "Budget rimanente", [
-    el("strong", { class: "stat-value", "data-counter": total ? left : 0, "data-value": 0, text: formatMoney(total ? left : 0) }),
+    el("strong", {
+      class: "stat-value",
+      "data-counter": total ? left : 0,
+      "data-value": 0,
+      text: formatMoney(total ? left : 0),
+    }),
     total
       ? el("div", { class: "stat-mini" }, [
-          el("div", { class: `progress progress--${level}` }, [el("div", { class: "progress__bar", style: `--pct:${pct}%` })]),
+          el("div", { class: `progress progress--${level}` }, [
+            el("div", { class: "progress__bar", style: `--pct:${pct}%` }),
+          ]),
           el("span", { class: "stat-sub muted", text: `${formatMoney(used)} di ${formatMoney(total)} usati` }),
         ])
       : el("span", { class: "stat-sub muted", text: "Nessun budget impostato" }),

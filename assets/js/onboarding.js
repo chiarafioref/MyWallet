@@ -1,5 +1,5 @@
-// Onboarding: slideshow introduttivo al primo accesso, saltabile e sempre
-// riapribile dal menu. Lo stato "visto" è persistito su profiles.onboarding_completed.
+// Tutorial introduttivo mostrato al primo accesso e riapribile dal menu.
+// Lo stato "visto" è salvato in profiles.onboarding_completed.
 import { el, qs, toast } from "./utils.js";
 import { icon } from "./icons.js";
 import { state } from "./store.js";
@@ -56,8 +56,9 @@ export function openOnboarding({ onFinish } = {}) {
       try {
         const updated = await profileApi.update({ onboarding_completed: true });
         state.profile = updated;
-      } catch {
-        // Offline: l'esperienza locale continua, si riproverà al prossimo salvataggio.
+      } catch (err) {
+        // Senza il salvataggio il tutorial ricomparirebbe al prossimo accesso: meglio saperlo.
+        console.warn("[onboarding] stato del tutorial non salvato:", err.message);
         state.profile = { ...state.profile, onboarding_completed: true };
       }
     }
@@ -73,7 +74,10 @@ export function openOnboarding({ onFinish } = {}) {
     panel.append(
       el("button", {
         class: "onboarding-skip",
-        onclick: () => { toast("Tutorial saltato", "info"); finish(true); },
+        onclick: () => {
+          toast("Tutorial saltato", "info");
+          finish(true);
+        },
         text: "Salta",
       }),
       el("div", { class: "onboarding-icon", html: icon(s.icon, { size: 40, stroke: 1.6 }) }),
@@ -88,14 +92,20 @@ export function openOnboarding({ onFinish } = {}) {
         el("button", {
           class: "btn btn--ghost",
           style: isFirst ? "visibility:hidden" : "",
-          onclick: () => { idx--; renderSlide(); },
+          onclick: () => {
+            idx--;
+            renderSlide();
+          },
           text: "Indietro",
         }),
         el("button", {
           class: "btn btn--primary",
           onclick: () => {
             if (isLast) finish(true);
-            else { idx++; renderSlide(); }
+            else {
+              idx++;
+              renderSlide();
+            }
           },
           text: isLast ? "Inizia" : "Avanti",
         }),

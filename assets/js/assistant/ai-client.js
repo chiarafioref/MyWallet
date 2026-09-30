@@ -1,30 +1,23 @@
-// AI assistant — browser client.
-// -----------------------------------------------------------------------------
-// The Mistral API key never reaches the browser. Every request is forwarded to
-// the Supabase Edge Function "chat-ai", which holds the key server-side (as the
-// Supabase Secret MISTRAL_API_KEY) and calls Mistral on our behalf.
-//
-// supabaseClient.functions.invoke() automatically attaches the logged-in user's
-// JWT, and the function is deployed with verify_jwt = true, so only
-// authenticated users can reach it.
-// -----------------------------------------------------------------------------
+// Client dell'assistente AI. La API key di Mistral non arriva mai al browser: ogni richiesta
+// passa dalla Edge Function "chat-ai", che la conserva come Secret e accetta solo utenti
+// autenticati (functions.invoke() allega il JWT della sessione).
 import { supabaseClient } from "../supabaseClient.js";
 import { AI_ASSISTANT_ENABLED } from "../config.js";
+import { state } from "../store.js";
+import { isDemoUser } from "../demo.js";
 
 const FUNCTION_NAME = "chat-ai";
 
-// The assistant is "on" only when the flag is set in config.js. If the flag is
-// true but the Edge Function is missing/unreachable, chatCompletion() throws and
-// the callers transparently fall back to the built-in local interpreter/advisor.
-export const aiEnabled = () => AI_ASSISTANT_ENABLED === true;
+// Gli utenti demo usano solo l'interprete locale (la Edge Function li rifiuta comunque).
+// Se la funzione non è raggiungibile chatCompletion() lancia un errore e i chiamanti
+// ripiegano sull'interprete locale.
+export const aiEnabled = () => AI_ASSISTANT_ENABLED === true && !isDemoUser(state.user);
 
 /**
- * Run one chat-completion request through the Edge Function.
- *
+ * Esegue una richiesta di chat completion tramite la Edge Function.
  * @param {Array<{ role: "system"|"user"|"assistant", content: string }>} messages
- * @param {{ temperature?: number, jsonMode?: boolean }} [options]
- *        jsonMode -> ask the model to reply with a strict JSON object.
- * @returns {Promise<string>} the assistant message content
+ * @param {{ temperature?: number, jsonMode?: boolean }} [options] jsonMode: risposta in JSON rigoroso
+ * @returns {Promise<string>} testo della risposta
  */
 export async function chatCompletion(messages, { temperature = 0.3, jsonMode = false } = {}) {
   const { data, error } = await supabaseClient.functions.invoke(FUNCTION_NAME, {
@@ -32,16 +25,17 @@ export async function chatCompletion(messages, { temperature = 0.3, jsonMode = f
   });
 
   if (error) {
-    // Surface the Edge Function's error message when available (helps debugging).
     let detail = error.message;
     try {
       const body = await error.context?.json?.();
       if (body?.error) detail = body.error;
-    } catch { /* ignore: keep the generic message */ }
+    } catch {
+      // Corpo della risposta non in JSON: resta il messaggio generico.
+    }
     throw new Error(`Edge Function "${FUNCTION_NAME}": ${detail}`);
   }
 
   const content = data?.content;
-  if (!content) throw new Error(`Edge Function "${FUNCTION_NAME}": empty response`);
+  if (!content) throw new Error(`Edge Function "${FUNCTION_NAME}": risposta vuota`);
   return String(content);
 }

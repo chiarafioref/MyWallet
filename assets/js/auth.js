@@ -1,7 +1,7 @@
-// Supabase authentication: signup, login, logout, session.
 import { supabaseClient } from "./supabaseClient.js";
 import { qs, toast } from "./utils.js";
 import { brandMark, icon } from "./icons.js";
+import { signInDemo } from "./demo.js";
 
 export async function getSession() {
   const { data } = await supabaseClient.auth.getSession();
@@ -33,8 +33,8 @@ export async function signOut() {
   await supabaseClient.auth.signOut();
 }
 
-export function renderAuthScreen(root, onAuthenticated) {
-  // #app uses a grid (sidebar) once logged in; neutralise it here.
+// L'accesso riuscito non richiede callback: lo gestisce onAuthChange() in app.js.
+export function renderAuthScreen(root) {
   root.classList.remove("app");
   root.innerHTML = `
     <div class="auth-screen">
@@ -95,6 +95,13 @@ export function renderAuthScreen(root, onAuthenticated) {
             <span id="auth-alt-text">Non hai un account?</span>
             <button type="button" class="link" id="auth-alt-btn">Registrati</button>
           </p>
+
+          <div class="auth-demo">
+            <p><strong>Vuoi solo dare un'occhiata?</strong> Esplora l'app con un anno di dati di esempio, senza registrarti.</p>
+            <button type="button" class="btn btn--ghost btn--block" id="auth-demo-btn">
+              ${icon("sparkles", { size: 18 })}<span class="btn-label">Prova la demo</span>
+            </button>
+          </div>
         </div>
       </main>
     </div>
@@ -117,7 +124,13 @@ export function renderAuthScreen(root, onAuthenticated) {
     tabs.forEach((t) => t.classList.toggle("is-active", t.dataset.mode === mode));
     const signup = mode === "signup";
     authNames.classList.toggle("is-open", signup);
-    authNames.querySelectorAll("input").forEach((i) => { i.disabled = !signup; if (!signup) { i.value = ""; validateField(i); } });
+    authNames.querySelectorAll("input").forEach((i) => {
+      i.disabled = !signup;
+      if (!signup) {
+        i.value = "";
+        validateField(i);
+      }
+    });
     btnLabel.textContent = signup ? "Crea account" : "Accedi";
     title.textContent = signup ? "Crea il tuo account" : "Bentornato";
     sub.textContent = signup
@@ -125,9 +138,21 @@ export function renderAuthScreen(root, onAuthenticated) {
       : "Accedi al tuo portafoglio digitale.";
     altText.textContent = signup ? "Hai già un account?" : "Non hai un account?";
     altBtn.textContent = signup ? "Accedi" : "Registrati";
-    form.querySelector('[name="password"]')
-      .setAttribute("autocomplete", signup ? "new-password" : "current-password");
+    form.querySelector('[name="password"]').setAttribute("autocomplete", signup ? "new-password" : "current-password");
   }
+
+  const demoBtn = qs("#auth-demo-btn", root);
+  demoBtn.addEventListener("click", async () => {
+    demoBtn.disabled = true;
+    demoBtn.classList.add("is-loading");
+    try {
+      await signInDemo();
+    } catch (err) {
+      toast(translateAuthError(err.message), "error");
+      demoBtn.disabled = false;
+      demoBtn.classList.remove("is-loading");
+    }
+  });
 
   tabs.forEach((tab) => tab.addEventListener("click", () => setMode(tab.dataset.mode)));
   altBtn.addEventListener("click", () => setMode(mode === "signup" ? "login" : "signup"));
@@ -149,13 +174,10 @@ export function renderAuthScreen(root, onAuthenticated) {
 
     try {
       if (mode === "signup") {
-        await signUp(fd);
-        toast("Account creato! Controlla l'email se la conferma è attiva.", "success");
-        const { data } = await supabaseClient.auth.getSession();
-        if (data.session) onAuthenticated(data.session);
+        const { session } = await signUp(fd);
+        toast(session ? "Account creato!" : "Account creato! Controlla l'email per confermarlo.", "success");
       } else {
-        const data = await signIn(fd);
-        onAuthenticated(data.session);
+        await signIn(fd);
       }
     } catch (err) {
       toast(translateAuthError(err.message), "error");
@@ -186,5 +208,6 @@ function translateAuthError(message = "") {
   if (m.includes("already registered")) return "Email già registrata";
   if (m.includes("password should be")) return "Password troppo debole (min 6 caratteri)";
   if (m.includes("email not confirmed")) return "Devi confermare l'email prima di accedere";
+  if (m.includes("anonymous sign-ins are disabled")) return "La demo non è disponibile al momento";
   return message || "Errore di autenticazione";
 }

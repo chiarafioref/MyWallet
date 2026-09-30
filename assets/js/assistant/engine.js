@@ -1,27 +1,21 @@
-// Smart-search engine.
-// Runs a spec (produced by the interpreter) against the store data and returns
-// a UI-ready result: natural-language answer, row list, summaries and related
-// statistics.
+// Motore dell'assistente: esegue la spec prodotta da interpreter.js sui dati dello store e
+// restituisce un risultato pronto per la UI (risposta, righe, riepiloghi, statistiche).
 import { state, selectors } from "../store.js";
-import { formatMoney, formatDate, monthKey } from "../utils.js";
+import { formatMoney, formatDate, monthKey, parseDate, todayISO, sameText } from "../utils.js";
+import { CATEGORY, categoryKey } from "../categories.js";
+import { computeBalances, payerOf } from "../settlement.js";
 import { interpret, aiEnabled, aiAdvisorAnswer, financeSnapshot } from "./interpreter.js";
-
-const todayISO = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
 
 const MONTH_LABEL = (d) => d.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 
-// Entry point: from question to result.
 export async function ask(query, section = "all") {
   const spec = await interpret(query, section);
   if (!spec) return null;
   const result = run(spec);
   result.spec = spec;
 
-  // AI advisor layer: if configured, it replaces the answer with a
-  // conversational expert explanation (the computed data/rows stay visible).
+  // Con l'AI attiva la risposta testuale viene sostituita da una spiegazione discorsiva;
+  // righe e riepiloghi calcolati localmente restano invariati.
   if (aiEnabled() && spec.intent !== "budget_planner" && !result.loadTrip) {
     try {
       const better = await aiAdvisorAnswer(query, result, spec);
@@ -31,7 +25,7 @@ export async function ask(query, section = "all") {
         result.spec.source = "ai";
       }
     } catch (err) {
-      console.warn("[assistant] AI answer unavailable, falling back to local:", err.message);
+      console.warn("[assistant] Risposta AI non disponibile, uso quella locale:", err.message);
     }
   }
   return result;
@@ -42,36 +36,44 @@ function run(spec) {
     return {
       title: "Consulente di budget",
       answer: "Costruiamo insieme un budget su misura, passo dopo passo.",
-      planner: true, rows: [], summary: [], stats: [],
+      planner: true,
+      rows: [],
+      summary: [],
+      stats: [],
     };
   }
   if (spec.intent === "affordability") return affordability(spec);
   if (spec.section === "trips" && spec.intent !== "section_summary") return tripSearch(spec);
 
-  // In a non-transactional section, generic questions become a summary.
+  // Nelle sezioni senza transazioni le domande generiche diventano un riepilogo.
   const NON_TX = ["budget", "savings", "future", "subscriptions"];
   const SPECIAL = ["savings_plan", "subscription_increases", "compare_months"];
   if (NON_TX.includes(spec.section) && !SPECIAL.includes(spec.intent)) {
     return sectionSummary(spec);
   }
   switch (spec.intent) {
-    case "aggregate": return aggregate(spec);
-    case "compare_months": return compareMonths(spec);
-    case "savings_plan": return savingsPlan(spec);
-    case "subscription_increases": return subscriptionIncreases(spec);
-    case "section_summary": return sectionSummary(spec);
-    default: return search(spec);
+    case "aggregate":
+      return aggregate(spec);
+    case "compare_months":
+      return compareMonths();
+    case "savings_plan":
+      return savingsPlan(spec);
+    case "subscription_increases":
+      return subscriptionIncreases();
+    case "section_summary":
+      return sectionSummary(spec);
+    default:
+      return search(spec);
   }
 }
 
-// Transaction filter.
 function filterTx(spec) {
   return state.transactions.filter((t) => {
     if (spec.type && t.type !== spec.type) return false;
     if (spec.paymentMethod && t.payment_method !== spec.paymentMethod) return false;
     if (spec.categories?.length) {
       const name = t.category_name || selectors.categoryName(t.category_id);
-      if (!spec.categories.some((c) => c.toLowerCase() === (name || "").toLowerCase())) return false;
+      if (!spec.categories.some((c) => sameText(c, name))) return false;
     }
     if (spec.dateFrom && t.tx_date < spec.dateFrom) return false;
     if (spec.dateTo && t.tx_date > spec.dateTo) return false;
@@ -93,18 +95,20 @@ function describeFilters(spec) {
   if (spec.type) parts.push(spec.type === "ENTRATA" ? "entrate" : "uscite");
   if (spec.categories?.length) parts.push(`categoria ${spec.categories.join(", ")}`);
   if (spec.paymentMethod) parts.push(spec.paymentMethod === "CARTA" ? "pagate con carta" : "in contanti");
-  if (spec.amountMin != null && spec.amountMax != null) parts.push(`tra ${formatMoney(spec.amountMin)} e ${formatMoney(spec.amountMax)}`);
+  if (spec.amountMin != null && spec.amountMax != null)
+    parts.push(`tra ${formatMoney(spec.amountMin)} e ${formatMoney(spec.amountMax)}`);
   else if (spec.amountMin != null) parts.push(`sopra ${formatMoney(spec.amountMin)}`);
   else if (spec.amountMax != null) parts.push(`sotto ${formatMoney(spec.amountMax)}`);
   if (spec.periodLabel && spec.periodLabel !== "tutto il periodo") parts.push(spec.periodLabel);
   return parts.join(" · ");
 }
 
-// Intent: search (list).
 function search(spec) {
   if (spec.section === "trips") return tripSearch(spec);
 
-  const rows = filterTx(spec).slice().sort((a, b) => b.tx_date.localeCompare(a.tx_date));
+  const rows = filterTx(spec)
+    .slice()
+    .sort((a, b) => b.tx_date.localeCompare(a.tx_date));
   const totalOut = sum(rows.filter((t) => t.type === "USCITA"));
   const totalIn = sum(rows.filter((t) => t.type === "ENTRATA"));
 
@@ -135,13 +139,14 @@ function search(spec) {
 function txRow(t) {
   return {
     title: t.title,
-    subtitle: [t.category_name, formatDate(t.tx_date), t.payment_method, t.subscription_id ? "abbonamento" : ""].filter(Boolean).join(" · "),
+    subtitle: [t.category_name, formatDate(t.tx_date), t.payment_method, t.subscription_id ? "abbonamento" : ""]
+      .filter(Boolean)
+      .join(" · "),
     amount: signed(t),
     type: t.type,
   };
 }
 
-// Intent: aggregation.
 function aggregate(spec) {
   const rows = filterTx(spec);
   const filt = describeFilters(spec);
@@ -149,7 +154,13 @@ function aggregate(spec) {
   let answer, headline;
 
   if (!rows.length) {
-    return { title: "Riepilogo", answer: `Nessun dato${filt ? " per " + filt : ""}.`, rows: [], summary: [], stats: [] };
+    return {
+      title: "Riepilogo",
+      answer: `Nessun dato${filt ? " per " + filt : ""}.`,
+      rows: [],
+      summary: [],
+      stats: [],
+    };
   }
 
   if (spec.aggregate === "max" || spec.aggregate === "min") {
@@ -158,7 +169,8 @@ function aggregate(spec) {
     headline = formatMoney(pick.amount);
     answer = `La ${spec.type === "ENTRATA" ? "entrata" : "spesa"} ${spec.aggregate === "max" ? "più alta" : "più bassa"}${filt ? " (" + filt + ")" : ""} è "${pick.title}" di ${formatMoney(pick.amount)} del ${formatDate(pick.tx_date)}${pick.category_name ? ` — ${pick.category_name}` : ""}.`;
     return {
-      title: "Riepilogo", answer,
+      title: "Riepilogo",
+      answer,
       rows: [txRow(pick)],
       summary: [{ label: spec.aggregate === "max" ? "Importo massimo" : "Importo minimo", value: headline }],
       stats: correlatedStats(spec, rows),
@@ -169,7 +181,10 @@ function aggregate(spec) {
     return {
       title: "Riepilogo",
       answer: `Ci sono ${rows.length} transazioni${filt ? " per " + filt : ""}.`,
-      rows: rows.slice().sort((a, b) => b.tx_date.localeCompare(a.tx_date)).map(txRow),
+      rows: rows
+        .slice()
+        .sort((a, b) => b.tx_date.localeCompare(a.tx_date))
+        .map(txRow),
       summary: [{ label: "Transazioni", value: String(rows.length) }],
       stats: correlatedStats(spec, rows),
     };
@@ -179,22 +194,36 @@ function aggregate(spec) {
     const avg = sum(rows) / rows.length;
     answer = `In media hai ${kindWord} ${formatMoney(avg)} a transazione${filt ? " (" + filt + ")" : ""}, su ${rows.length} movimenti.`;
     return {
-      title: "Riepilogo", answer,
-      rows: rows.slice().sort((a, b) => +b.amount - +a.amount).slice(0, 10).map(txRow),
-      summary: [{ label: "Media", value: formatMoney(avg) }, { label: "Totale", value: formatMoney(sum(rows)) }],
+      title: "Riepilogo",
+      answer,
+      rows: rows
+        .slice()
+        .sort((a, b) => +b.amount - +a.amount)
+        .slice(0, 10)
+        .map(txRow),
+      summary: [
+        { label: "Media", value: formatMoney(avg) },
+        { label: "Totale", value: formatMoney(sum(rows)) },
+      ],
       stats: correlatedStats(spec, rows),
     };
   }
 
-  // default: sum
   const total = sum(rows);
   answer = `${cap(spec.periodLabel && spec.periodLabel !== "tutto il periodo" ? spec.periodLabel : "In totale")} hai ${kindWord} ${formatMoney(total)}${spec.categories?.length ? ` in ${spec.categories.join(", ")}` : ""}${spec.paymentMethod ? ` (${spec.paymentMethod.toLowerCase()})` : ""}.`;
   return {
     title: "Riepilogo",
     answer,
-    rows: rows.slice().sort((a, b) => b.tx_date.localeCompare(a.tx_date)).map(txRow),
+    rows: rows
+      .slice()
+      .sort((a, b) => b.tx_date.localeCompare(a.tx_date))
+      .map(txRow),
     summary: [
-      { label: `Totale ${spec.type === "ENTRATA" ? "entrate" : "uscite"}`, value: formatMoney(total), kind: spec.type === "ENTRATA" ? "income" : "expense" },
+      {
+        label: `Totale ${spec.type === "ENTRATA" ? "entrate" : "uscite"}`,
+        value: formatMoney(total),
+        kind: spec.type === "ENTRATA" ? "income" : "expense",
+      },
       { label: "Transazioni", value: String(rows.length) },
       { label: "Media", value: formatMoney(total / rows.length) },
     ],
@@ -202,8 +231,8 @@ function aggregate(spec) {
   };
 }
 
-// Intent: "why did I spend more than usual?"
-function compareMonths(spec) {
+// "Perché questo mese ho speso più del solito?"
+function compareMonths() {
   const now = new Date();
   const cur = monthKey(now);
   const prev = monthKey(new Date(now.getFullYear(), now.getMonth() - 1, 1));
@@ -211,13 +240,14 @@ function compareMonths(spec) {
   const byCat = (key) => {
     const m = {};
     for (const t of state.transactions) {
-      if (t.type !== "USCITA" || monthKey(new Date(t.tx_date)) !== key) continue;
+      if (t.type !== "USCITA" || monthKey(parseDate(t.tx_date)) !== key) continue;
       const n = t.category_name || selectors.categoryName(t.category_id);
       m[n] = (m[n] || 0) + +t.amount;
     }
     return m;
   };
-  const a = byCat(cur), b = byCat(prev);
+  const a = byCat(cur),
+    b = byCat(prev);
   const curTot = Object.values(a).reduce((s, v) => s + v, 0);
   const prevTot = Object.values(b).reduce((s, v) => s + v, 0);
   const diff = curTot - prevTot;
@@ -231,7 +261,10 @@ function compareMonths(spec) {
   if (Math.abs(diff) < 1) {
     answer = `Questo mese hai speso ${formatMoney(curTot)}, in linea con il mese scorso (${formatMoney(prevTot)}).`;
   } else if (diff > 0) {
-    const detail = up.slice(0, 5).map((d) => `${d.name} +${formatMoney(d.delta)}`).join(", ");
+    const detail = up
+      .slice(0, 5)
+      .map((d) => `${d.name} +${formatMoney(d.delta)}`)
+      .join(", ");
     answer = `Hai speso ${formatMoney(diff)} in più rispetto al mese scorso (${formatMoney(curTot)} contro ${formatMoney(prevTot)}). Le differenze principali sono: ${detail}.`;
   } else {
     answer = `Buone notizie: questo mese hai speso ${formatMoney(-diff)} in meno rispetto al mese scorso (${formatMoney(curTot)} contro ${formatMoney(prevTot)}).`;
@@ -246,12 +279,14 @@ function compareMonths(spec) {
       { label: "Mese scorso", value: formatMoney(prevTot) },
       { label: "Differenza", value: formatMoney(diff, { sign: true }), kind: diff > 0 ? "expense" : "income" },
     ],
-    stats: deltas.filter((d) => Math.abs(d.delta) > 0.5).slice(0, 8)
+    stats: deltas
+      .filter((d) => Math.abs(d.delta) > 0.5)
+      .slice(0, 8)
       .map((d) => ({ label: d.name, value: formatMoney(d.delta, { sign: true }) })),
   };
 }
 
-// Intent: "can I afford this expense / instalment?"
+// "Posso permettermi questa spesa / questa rata?"
 function affordability(spec) {
   const snap = financeSnapshot();
   const income = snap.entrateMensiliMedie;
@@ -264,17 +299,23 @@ function affordability(spec) {
   if (income <= 0 && expense <= 0) {
     return {
       title: "Sostenibilità della spesa",
-      answer: "Non ho ancora abbastanza movimenti per stimare le tue entrate e uscite mensili. Registra almeno un mese di transazioni e potrò dirti con precisione se puoi permetterti una nuova spesa o una rata.",
-      rows: [], summary: [], stats: [],
+      answer:
+        "Non ho ancora abbastanza movimenti per stimare le tue entrate e uscite mensili. Registra almeno un mese di transazioni e potrò dirti con precisione se puoi permetterti una nuova spesa o una rata.",
+      rows: [],
+      summary: [],
+      stats: [],
     };
   }
 
-  const DISCRETIONARY = new Set(["RISTORANTI", "BAR", "SHOPPING", "INTRATTENIMENTO", "SPORT"]);
-  const cuts = snap.speseMensiliPerCategoria.filter((c) => DISCRETIONARY.has(c.name) && c.mensile > 3);
+  const discretionary = new Set(
+    [CATEGORY.RISTORANTI, CATEGORY.BAR, CATEGORY.SHOPPING, CATEGORY.INTRATTENIMENTO, CATEGORY.SPORT].map(categoryKey)
+  );
+  const cuts = snap.speseMensiliPerCategoria.filter((c) => discretionary.has(categoryKey(c.name)) && c.mensile > 3);
   const cutPool = cuts.reduce((s, c) => s + c.mensile, 0);
-  const existingDebt = snap.speseMensiliPerCategoria.find((c) => c.name === "RATE FINANZIAMENTI")?.mensile || 0;
-  const cutList = () => cuts.map((c) => `${cap(c.name.toLowerCase())} ${formatMoney(c.mensile)}/mese`).join(", ");
-  const cutStats = cuts.map((c) => ({ label: `${cap(c.name.toLowerCase())} — spesa media`, value: `${formatMoney(c.mensile)}/mese` }));
+  const existingDebt =
+    snap.speseMensiliPerCategoria.find((c) => sameText(c.name, CATEGORY.RATE_FINANZIAMENTI))?.mensile || 0;
+  const cutList = () => cuts.map((c) => `${c.name} ${formatMoney(c.mensile)}/mese`).join(", ");
+  const cutStats = cuts.map((c) => ({ label: `${c.name} — spesa media`, value: `${formatMoney(c.mensile)}/mese` }));
 
   const summary = [
     { label: "Entrate medie/mese", value: formatMoney(income), kind: "income" },
@@ -283,95 +324,138 @@ function affordability(spec) {
   ];
   const lines = [];
 
-  // monthly instalment
+  // Rata mensile
   if (Number.isFinite(M) && M > 0) {
     const after = margin - M;
     const pctIncome = income > 0 ? (M / income) * 100 : 0;
     const debtPct = income > 0 ? ((existingDebt + M) / income) * 100 : 0;
-    const buffer = income * 0.10;
+    const buffer = income * 0.1;
 
     if (margin <= 0) {
-      lines.push(`No. In media spendi ${formatMoney(expense)} al mese a fronte di ${formatMoney(income)} di entrate: non hai margine per una rata di ${formatMoney(M)} senza tagliare altre spese.`);
+      lines.push(
+        `No. In media spendi ${formatMoney(expense)} al mese a fronte di ${formatMoney(income)} di entrate: non hai margine per una rata di ${formatMoney(M)} senza tagliare altre spese.`
+      );
     } else if (after >= buffer) {
-      lines.push(`Sì, puoi permetterti ${what}. Con una rata di ${formatMoney(M)} al mese ti resterebbe comunque un margine di circa ${formatMoney(after)}/mese.`);
+      lines.push(
+        `Sì, puoi permetterti ${what}. Con una rata di ${formatMoney(M)} al mese ti resterebbe comunque un margine di circa ${formatMoney(after)}/mese.`
+      );
     } else if (after > 0) {
-      lines.push(`Sì, ma con cautela. Una rata di ${formatMoney(M)} lascerebbe il tuo margine mensile a soli ${formatMoney(after)}: sostenibile solo se entrate e uscite restano stabili.`);
+      lines.push(
+        `Sì, ma con cautela. Una rata di ${formatMoney(M)} lascerebbe il tuo margine mensile a soli ${formatMoney(after)}: sostenibile solo se entrate e uscite restano stabili.`
+      );
     } else {
-      lines.push(`Rischioso. La rata di ${formatMoney(M)} supera il tuo margine mensile medio (${formatMoney(margin)}): andresti in rosso di circa ${formatMoney(-after)} ogni mese.`);
+      lines.push(
+        `Rischioso. La rata di ${formatMoney(M)} supera il tuo margine mensile medio (${formatMoney(margin)}): andresti in rosso di circa ${formatMoney(-after)} ogni mese.`
+      );
     }
 
-    lines.push(`Il calcolo: margine mensile = entrate medie (${formatMoney(income)}) − uscite medie (${formatMoney(expense)}) = ${formatMoney(margin)}. La rata di ${formatMoney(M)} pesa il ${pctIncome.toFixed(0)}% del tuo reddito.`);
-    lines.push(existingDebt > 0
-      ? `Contando le rate che già paghi (${formatMoney(existingDebt)}/mese), impegneresti il ${debtPct.toFixed(0)}% del reddito in rate: la soglia prudente consigliata è il 20-30%.`
-      : `Riferimento da esperto: il totale delle rate non dovrebbe superare il 20-30% del reddito netto (nel tuo caso max ~${formatMoney(income * 0.25)}/mese).`);
+    lines.push(
+      `Il calcolo: margine mensile = entrate medie (${formatMoney(income)}) − uscite medie (${formatMoney(expense)}) = ${formatMoney(margin)}. La rata di ${formatMoney(M)} pesa il ${pctIncome.toFixed(0)}% del tuo reddito.`
+    );
+    lines.push(
+      existingDebt > 0
+        ? `Contando le rate che già paghi (${formatMoney(existingDebt)}/mese), impegneresti il ${debtPct.toFixed(0)}% del reddito in rate: la soglia prudente consigliata è il 20-30%.`
+        : `Riferimento da esperto: il totale delle rate non dovrebbe superare il 20-30% del reddito netto (nel tuo caso max ~${formatMoney(income * 0.25)}/mese).`
+    );
     if (after < buffer && cutPool > 0) {
-      lines.push(`Per liberare spazio puoi ridurre le spese discrezionali: ${cutList()}. Tagliando ~${formatMoney(Math.min(cutPool, M))} copriresti la rata senza intaccare il resto.`);
+      lines.push(
+        `Per liberare spazio puoi ridurre le spese discrezionali: ${cutList()}. Tagliando ~${formatMoney(Math.min(cutPool, M))} copriresti la rata senza intaccare il resto.`
+      );
     }
-    lines.push(`Prima di impegnarti, assicurati di avere un fondo di emergenza di 3-6 mensilità di spese (~${formatMoney(expense * 3)}–${formatMoney(expense * 6)}).`);
+    lines.push(
+      `Prima di impegnarti, assicurati di avere un fondo di emergenza di 3-6 mensilità di spese (~${formatMoney(expense * 3)}–${formatMoney(expense * 6)}).`
+    );
 
     summary.push({ label: "Rata richiesta", value: `${formatMoney(M)}/mese`, kind: "expense" });
-    summary.push({ label: "Margine dopo la rata", value: `${formatMoney(after)}/mese`, kind: after > 0 ? "income" : "expense" });
+    summary.push({
+      label: "Margine dopo la rata",
+      value: `${formatMoney(after)}/mese`,
+      kind: after > 0 ? "income" : "expense",
+    });
     return { title: "Posso permettermelo?", answer: lines.join("\n"), rows: [], summary, stats: cutStats };
   }
 
-  // one-off cost
+  // Spesa una tantum
   if (Number.isFinite(total) && total > 0) {
     const monthsToSave = margin > 0 ? total / margin : Infinity;
     const suggRata = total / 12;
     if (margin <= 0) {
-      lines.push(`Al momento no: non hai un margine mensile positivo da destinare a una spesa di ${formatMoney(total)}.`);
+      lines.push(
+        `Al momento no: non hai un margine mensile positivo da destinare a una spesa di ${formatMoney(total)}.`
+      );
     } else if (monthsToSave <= 3) {
-      lines.push(`Sì. Con il tuo margine di ${formatMoney(margin)}/mese metteresti da parte ${formatMoney(total)} in circa ${Math.ceil(monthsToSave)} mesi.`);
+      lines.push(
+        `Sì. Con il tuo margine di ${formatMoney(margin)}/mese metteresti da parte ${formatMoney(total)} in circa ${Math.ceil(monthsToSave)} mesi.`
+      );
     } else if (monthsToSave <= 8) {
-      lines.push(`Sì, con un po' di pianificazione: servirebbero ~${Math.ceil(monthsToSave)} mesi di risparmio, oppure una rata da ~${formatMoney(suggRata)}/mese in 12 mesi.`);
+      lines.push(
+        `Sì, con un po' di pianificazione: servirebbero ~${Math.ceil(monthsToSave)} mesi di risparmio, oppure una rata da ~${formatMoney(suggRata)}/mese in 12 mesi.`
+      );
     } else {
-      lines.push(`Solo pianificando: al ritmo attuale (${formatMoney(margin)}/mese di margine) ci vorrebbero ~${Math.ceil(monthsToSave)} mesi. Una rata da ~${formatMoney(suggRata)}/mese sarebbe più gestibile.`);
+      lines.push(
+        `Solo pianificando: al ritmo attuale (${formatMoney(margin)}/mese di margine) ci vorrebbero ~${Math.ceil(monthsToSave)} mesi. Una rata da ~${formatMoney(suggRata)}/mese sarebbe più gestibile.`
+      );
     }
-    lines.push(`Il calcolo: margine mensile = ${formatMoney(income)} − ${formatMoney(expense)} = ${formatMoney(margin)}. La spesa di ${formatMoney(total)} vale ${margin > 0 ? "circa " + Math.ceil(monthsToSave) : "diversi"} mesi di margine.`);
-    lines.push(`Se la rateizzi, controlla che la rata resti entro il 20-30% del reddito (max ~${formatMoney(income * 0.25)}/mese) e ti lasci comunque un margine positivo.`);
+    lines.push(
+      `Il calcolo: margine mensile = ${formatMoney(income)} − ${formatMoney(expense)} = ${formatMoney(margin)}. La spesa di ${formatMoney(total)} vale ${margin > 0 ? "circa " + Math.ceil(monthsToSave) : "diversi"} mesi di margine.`
+    );
+    lines.push(
+      `Se la rateizzi, controlla che la rata resti entro il 20-30% del reddito (max ~${formatMoney(income * 0.25)}/mese) e ti lasci comunque un margine positivo.`
+    );
     if (cutPool > 0) lines.push(`Voci su cui puoi intervenire per accelerare: ${cutList()}.`);
     summary.push({ label: "Costo totale", value: formatMoney(total), kind: "expense" });
     if (margin > 0) summary.push({ label: "Mesi di risparmio", value: String(Math.ceil(monthsToSave)) });
     return { title: "Posso permettermelo?", answer: lines.join("\n"), rows: [], summary, stats: cutStats };
   }
 
-  // no amount specified
-  const safeRata = Math.max(0, margin - income * 0.10);
-  lines.push(margin > 0
-    ? `Con le tue abitudini attuali hai un margine mensile medio di ${formatMoney(margin)} (entrate ${formatMoney(income)} − uscite ${formatMoney(expense)}).`
-    : `Al momento le uscite medie (${formatMoney(expense)}) sono pari o superiori alle entrate (${formatMoney(income)}): non c'è margine per nuove spese fisse senza tagliare altro.`);
+  // Nessun importo indicato
+  const safeRata = Math.max(0, margin - income * 0.1);
+  lines.push(
+    margin > 0
+      ? `Con le tue abitudini attuali hai un margine mensile medio di ${formatMoney(margin)} (entrate ${formatMoney(income)} − uscite ${formatMoney(expense)}).`
+      : `Al momento le uscite medie (${formatMoney(expense)}) sono pari o superiori alle entrate (${formatMoney(income)}): non c'è margine per nuove spese fisse senza tagliare altro.`
+  );
   if (margin > 0) {
-    lines.push(`Tenendo un cuscinetto del 10% del reddito, potresti sostenere una nuova rata fino a ~${formatMoney(safeRata)}/mese. Restando entro il 20-30% del reddito, il limite prudente per il totale delle rate è ~${formatMoney(income * 0.25)}/mese.`);
+    lines.push(
+      `Tenendo un cuscinetto del 10% del reddito, potresti sostenere una nuova rata fino a ~${formatMoney(safeRata)}/mese. Restando entro il 20-30% del reddito, il limite prudente per il totale delle rate è ~${formatMoney(income * 0.25)}/mese.`
+    );
     lines.push(`Indicami l'importo (es. "posso permettermi una rata di 70€ al mese?") e ti do una risposta precisa.`);
   }
   summary.push({ label: "Rata sostenibile stimata", value: `~${formatMoney(safeRata)}/mese`, kind: "income" });
   return { title: "Quanto posso permettermi?", answer: lines.join("\n"), rows: [], summary, stats: cutStats };
 }
 
-// Intent: "how can I save N EUR per month?"
+// "Come posso risparmiare N € al mese?": taglio proporzionale delle spese comprimibili.
 function savingsPlan(spec) {
   const target = spec.target || 200;
-  const DISCRETIONARY = ["RISTORANTI", "BAR", "SHOPPING", "INTRATTENIMENTO", "SPORT", "CARBURANTE", "SPESA"];
+  const DISCRETIONARY = [
+    CATEGORY.RISTORANTI,
+    CATEGORY.BAR,
+    CATEGORY.SHOPPING,
+    CATEGORY.INTRATTENIMENTO,
+    CATEGORY.SPORT,
+    CATEGORY.CARBURANTE,
+    CATEGORY.SPESA,
+  ];
 
-  // Monthly average per category over the last 3 full months + the current one.
+  // Media mensile per categoria sul mese corrente e i due precedenti.
   const now = new Date();
   const months = [0, 1, 2].map((i) => monthKey(new Date(now.getFullYear(), now.getMonth() - i, 1)));
   const perCat = {};
   for (const t of state.transactions) {
     if (t.type !== "USCITA") continue;
-    const k = monthKey(new Date(t.tx_date));
+    const k = monthKey(parseDate(t.tx_date));
     if (!months.includes(k)) continue;
-    const n = t.category_name || selectors.categoryName(t.category_id);
+    const n = categoryKey(t.category_name || selectors.categoryName(t.category_id));
     perCat[n] = (perCat[n] || 0) + +t.amount;
   }
   const monthlyAvg = Object.fromEntries(Object.entries(perCat).map(([n, v]) => [n, v / months.length]));
 
-  // Subscriptions as a compressible item.
   const subMonthly = selectors.subscriptionCostSummary().monthly;
-  const pool = DISCRETIONARY
-    .map((n) => ({ name: n, monthly: monthlyAvg[n] || 0 }))
-    .filter((r) => r.monthly > 0);
-  if (subMonthly > 0) pool.push({ name: "ABBONAMENTI", monthly: subMonthly });
+  const pool = DISCRETIONARY.map((n) => ({ name: n, monthly: monthlyAvg[categoryKey(n)] || 0 })).filter(
+    (r) => r.monthly > 0
+  );
+  if (subMonthly > 0) pool.push({ name: "Abbonamenti", monthly: subMonthly });
   pool.sort((a, b) => b.monthly - a.monthly);
 
   const base = pool.reduce((s, r) => s + r.monthly, 0);
@@ -379,17 +463,21 @@ function savingsPlan(spec) {
     return {
       title: "Piano di risparmio",
       answer: `Non ho abbastanza dati di spesa recenti per costruire un piano. Registra qualche transazione in più e riprova.`,
-      rows: [], summary: [], stats: [],
+      rows: [],
+      summary: [],
+      stats: [],
     };
   }
-  let pct = Math.min(0.4, target / base);
+  const pct = Math.min(0.4, target / base);
   const cuts = pool.map((r) => ({ ...r, cut: r.monthly * pct })).filter((r) => r.cut >= 1);
   const totalCut = cuts.reduce((s, r) => s + r.cut, 0);
 
-  const detail = cuts.map((r) => `${cap(r.name.toLowerCase())} (${formatMoney(r.cut)})`).join(", ");
+  const detail = cuts.map((r) => `${r.name} (${formatMoney(r.cut)})`).join(", ");
   const answer =
     `Riducendo del ${Math.round(pct * 100)}% le spese in ${detail} potresti risparmiare circa ${formatMoney(totalCut)} al mese` +
-    (totalCut < target * 0.95 ? ` — meno dei ${formatMoney(target)} richiesti: servirebbe anche rivedere le spese fisse.` : ".");
+    (totalCut < target * 0.95
+      ? ` — meno dei ${formatMoney(target)} richiesti: servirebbe anche rivedere le spese fisse.`
+      : ".");
 
   return {
     title: "Piano di risparmio",
@@ -400,27 +488,50 @@ function savingsPlan(spec) {
       { label: "Risparmio stimato", value: `${formatMoney(totalCut)}/mese`, kind: "income" },
       { label: "Taglio medio", value: `${Math.round(pct * 100)}%` },
     ],
-    stats: cuts.map((r) => ({ label: `${cap(r.name.toLowerCase())} (ora ${formatMoney(r.monthly)}/mese)`, value: `−${formatMoney(r.cut)}` })),
+    stats: cuts.map((r) => ({
+      label: `${r.name} (ora ${formatMoney(r.monthly)}/mese)`,
+      value: `−${formatMoney(r.cut)}`,
+    })),
   };
 }
 
-// Intent: "which subscriptions will increase in price?"
-function subscriptionIncreases(spec) {
+// "Quali abbonamenti aumenteranno di prezzo?"
+function subscriptionIncreases() {
   const today = todayISO();
   const list = state.subscriptions
-    .filter((s) => !s.is_paused && s.promo && s.regular_amount && s.promo_end_date && s.promo_end_date >= today && +s.regular_amount > +s.amount)
+    .filter(
+      (s) =>
+        !s.is_paused &&
+        s.promo &&
+        s.regular_amount &&
+        s.promo_end_date &&
+        s.promo_end_date >= today &&
+        +s.regular_amount > +s.amount
+    )
     .sort((a, b) => a.promo_end_date.localeCompare(b.promo_end_date));
 
   if (!list.length) {
-    return { title: "Abbonamenti", answer: "Nessun abbonamento in promozione è destinato ad aumentare nei prossimi mesi.", rows: [], summary: [], stats: [] };
+    return {
+      title: "Abbonamenti",
+      answer: "Nessun abbonamento in promozione è destinato ad aumentare nei prossimi mesi.",
+      rows: [],
+      summary: [],
+      stats: [],
+    };
   }
   const totalDelta = list.reduce((s, x) => {
     const months = selectors.subIntervalMonths(x);
     return s + (+x.regular_amount - +x.amount) / months;
   }, 0);
 
-  const answer = `${list.length} abbonament${list.length > 1 ? "i aumenteranno" : "o aumenterà"} di prezzo: ` +
-    list.map((s) => `${s.name} da ${formatMoney(s.amount)} a ${formatMoney(s.regular_amount)} dal ${formatDate(s.promo_end_date)}`).join("; ") +
+  const answer =
+    `${list.length} abbonament${list.length > 1 ? "i aumenteranno" : "o aumenterà"} di prezzo: ` +
+    list
+      .map(
+        (s) =>
+          `${s.name} da ${formatMoney(s.amount)} a ${formatMoney(s.regular_amount)} dal ${formatDate(s.promo_end_date)}`
+      )
+      .join("; ") +
     `. Impatto totale: +${formatMoney(totalDelta)}/mese.`;
 
   return {
@@ -429,7 +540,7 @@ function subscriptionIncreases(spec) {
     rows: list.map((s) => ({
       title: s.name,
       subtitle: `${s.category_name || ""} · nuovo prezzo dal ${formatDate(s.promo_end_date)}`,
-      amount: -(+s.regular_amount),
+      amount: -+s.regular_amount,
       type: "USCITA",
     })),
     summary: [
@@ -440,7 +551,6 @@ function subscriptionIncreases(spec) {
   };
 }
 
-// Intent: section summary.
 function sectionSummary(spec) {
   if (spec.section === "budget") {
     const spent = selectors.spentByCategory();
@@ -461,17 +571,28 @@ function sectionSummary(spec) {
         { label: "Superati", value: String(over.length), kind: over.length ? "expense" : "income" },
         { label: "Rimanente totale", value: formatMoney(selectors.budgetRemaining()) },
       ],
-      stats: rows.sort((a, b) => b.pct - a.pct).map((r) => ({ label: r.name, value: `${formatMoney(r.used)} / ${formatMoney(r.limit)} (${r.pct}%)` })),
+      stats: rows
+        .sort((a, b) => b.pct - a.pct)
+        .map((r) => ({ label: r.name, value: `${formatMoney(r.used)} / ${formatMoney(r.limit)} (${r.pct}%)` })),
     };
   }
   if (spec.section === "savings") {
-    const rows = state.goals.map((g) => ({ name: g.name, saved: selectors.goalSaved(g.id), target: g.target_amount ? +g.target_amount : null }));
+    const rows = state.goals.map((g) => ({
+      name: g.name,
+      saved: selectors.goalSaved(g.id),
+      target: g.target_amount ? +g.target_amount : null,
+    }));
     const totalSaved = rows.reduce((s, r) => s + r.saved, 0);
     return {
       title: "Situazione risparmi",
-      answer: rows.length ? `Hai ${rows.length} obiettivi di risparmio, per un totale accantonato di ${formatMoney(totalSaved)}.` : "Non hai ancora obiettivi di risparmio.",
+      answer: rows.length
+        ? `Hai ${rows.length} obiettivi di risparmio, per un totale accantonato di ${formatMoney(totalSaved)}.`
+        : "Non hai ancora obiettivi di risparmio.",
       rows: [],
-      summary: [{ label: "Obiettivi", value: String(rows.length) }, { label: "Totale risparmiato", value: formatMoney(totalSaved), kind: "income" }],
+      summary: [
+        { label: "Obiettivi", value: String(rows.length) },
+        { label: "Totale risparmiato", value: formatMoney(totalSaved), kind: "income" },
+      ],
       stats: rows.map((r) => ({
         label: r.name,
         value: r.target
@@ -481,14 +602,27 @@ function sectionSummary(spec) {
     };
   }
   if (spec.section === "future") {
-    const rows = state.futureExpenses.map((f) => ({ name: f.name, saved: selectors.futureSaved(f.id), total: +f.total_amount, due: f.due_date }));
+    const rows = state.futureExpenses.map((f) => ({
+      name: f.name,
+      saved: selectors.futureSaved(f.id),
+      total: +f.total_amount,
+      due: f.due_date,
+    }));
     const need = rows.reduce((s, r) => s + Math.max(0, r.total - r.saved), 0);
     return {
       title: "Spese future",
-      answer: rows.length ? `Hai ${rows.length} spese future pianificate; mancano ${formatMoney(need)} da accantonare in totale.` : "Nessuna spesa futura pianificata.",
+      answer: rows.length
+        ? `Hai ${rows.length} spese future pianificate; mancano ${formatMoney(need)} da accantonare in totale.`
+        : "Nessuna spesa futura pianificata.",
       rows: [],
-      summary: [{ label: "Pianificate", value: String(rows.length) }, { label: "Da accantonare", value: formatMoney(need), kind: "expense" }],
-      stats: rows.map((r) => ({ label: `${r.name} · ${formatDate(r.due)}`, value: `${formatMoney(r.saved)} / ${formatMoney(r.total)}` })),
+      summary: [
+        { label: "Pianificate", value: String(rows.length) },
+        { label: "Da accantonare", value: formatMoney(need), kind: "expense" },
+      ],
+      stats: rows.map((r) => ({
+        label: `${r.name} · ${formatDate(r.due)}`,
+        value: `${formatMoney(r.saved)} / ${formatMoney(r.total)}`,
+      })),
     };
   }
   if (spec.section === "subscriptions") {
@@ -513,26 +647,44 @@ function sectionSummary(spec) {
   return search(spec);
 }
 
-// Trip search.
 function tripSearch(spec) {
   const trip = spec.tripName
     ? state.trips.find((t) => t.name.toLowerCase().includes(spec.tripName.toLowerCase()))
     : null;
 
   if (spec.tripName && !trip) {
-    return { title: "Viaggi", answer: `Non ho trovato un viaggio chiamato "${spec.tripName}".`, rows: [], summary: [], stats: [] };
+    return {
+      title: "Viaggi",
+      answer: `Non ho trovato un viaggio chiamato "${spec.tripName}".`,
+      rows: [],
+      summary: [],
+      stats: [],
+    };
   }
   if (!trip) {
-    const rows = state.trips.map((t) => ({ title: t.name, subtitle: `${(t.trip_members || []).length} partecipanti · ${t.status}`, amount: 0, type: "INFO" }));
-    return { title: "I tuoi viaggi", answer: `Hai ${state.trips.length} viaggi condivisi.`, rows, summary: [], stats: [] };
+    const rows = state.trips.map((t) => ({
+      title: t.name,
+      subtitle: `${(t.trip_members || []).length} partecipanti · ${t.status}`,
+      amount: 0,
+      type: "INFO",
+    }));
+    return {
+      title: "I tuoi viaggi",
+      answer: `Hai ${state.trips.length} viaggi condivisi.`,
+      rows,
+      summary: [],
+      stats: [],
+    };
   }
-  // The trip's expense detail is loaded by the view (async) and passed to
-  // buildTripReport(); here we only return the reference.
+  // Le spese del viaggio vengono caricate dalla view e passate a buildTripReport().
   return {
     title: `Viaggio: ${trip.name}`,
     answer: `Carico il resoconto del viaggio "${trip.name}"…`,
     rows: [],
-    summary: [{ label: "Partecipanti", value: String((trip.trip_members || []).length) }, { label: "Stato", value: trip.status }],
+    summary: [
+      { label: "Partecipanti", value: String((trip.trip_members || []).length) },
+      { label: "Stato", value: trip.status },
+    ],
     stats: [],
     tripId: trip.id,
     tripName: trip.name,
@@ -540,44 +692,35 @@ function tripSearch(spec) {
   };
 }
 
-// Builds a trip report with expenses/members already loaded.
 export function buildTripReport(trip, expenses, members, spec = {}) {
   let list = expenses.slice();
   if (spec.categories?.length) {
-    list = list.filter((e) => spec.categories.some((c) => c.toLowerCase() === (e.category_name || "").toLowerCase()));
+    list = list.filter((e) => spec.categories.some((c) => sameText(c, e.category_name)));
   }
   if (spec.dateFrom) list = list.filter((e) => e.expense_date >= spec.dateFrom);
   if (spec.dateTo) list = list.filter((e) => e.expense_date <= spec.dateTo);
   if (spec.amountMin != null) list = list.filter((e) => +e.amount >= spec.amountMin);
   if (spec.amountMax != null) list = list.filter((e) => +e.amount <= spec.amountMax);
 
-  const total = list.reduce((s, e) => s + (e.type === "ENTRATA" ? -e.amount : +e.amount), 0);
-  const paid = {};
-  for (const e of list) {
-    if (e.type !== "USCITA") continue;
-    const payer = e.paid_by || e.created_by;
-    paid[payer] = (paid[payer] || 0) + +e.amount;
-  }
-  const perHead = members.length ? total / members.length : 0;
-  const settlement = members.map((m) => ({
-    name: m.display_name,
-    paid: paid[m.user_id] || 0,
-    balance: (paid[m.user_id] || 0) - perHead,
-  }));
+  const { total, perHead, rows: settlement } = computeBalances(list, members);
 
   const nameOf = (id) => members.find((m) => m.user_id === id)?.display_name || "—";
 
   return {
     title: `Viaggio: ${trip.name}`,
-    answer: `Nel viaggio "${trip.name}" sono state registrate ${list.length} spese per un totale di ${formatMoney(total)}` +
+    answer:
+      `Nel viaggio "${trip.name}" sono state registrate ${list.length} spese per un totale di ${formatMoney(total)}` +
       (members.length ? `, ${formatMoney(perHead)} a testa.` : ".") +
       (trip.status === "TERMINATO" ? " Viaggio terminato." : ""),
-    rows: list.slice().sort((a, b) => b.expense_date.localeCompare(a.expense_date)).map((e) => ({
-      title: e.title,
-      subtitle: `${e.category_name} · ${formatDate(e.expense_date)} · ${nameOf(e.paid_by || e.created_by)}`,
-      amount: e.type === "ENTRATA" ? +e.amount : -e.amount,
-      type: e.type,
-    })),
+    rows: list
+      .slice()
+      .sort((a, b) => b.expense_date.localeCompare(a.expense_date))
+      .map((e) => ({
+        title: e.title,
+        subtitle: `${e.category_name} · ${formatDate(e.expense_date)} · ${nameOf(payerOf(e))}`,
+        amount: e.type === "ENTRATA" ? +e.amount : -e.amount,
+        type: e.type,
+      })),
     summary: [
       { label: "Totale spese", value: formatMoney(total), kind: "expense" },
       { label: "Spese registrate", value: String(list.length) },
@@ -591,12 +734,11 @@ export function buildTripReport(trip, expenses, members, spec = {}) {
   };
 }
 
-// Related statistics.
 function correlatedStats(spec, rows) {
   if (!rows?.length) return [];
   const stats = [];
 
-  // Breakdown by category (unless already filtered to a single one).
+  // Ripartizione per categoria, o andamento mensile se il filtro è su una sola categoria.
   if (!spec.categories || spec.categories.length !== 1) {
     const byCat = {};
     for (const t of rows) {
@@ -604,16 +746,19 @@ function correlatedStats(spec, rows) {
       const n = t.category_name || selectors.categoryName(t.category_id);
       byCat[n] = (byCat[n] || 0) + +t.amount;
     }
-    Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    Object.entries(byCat)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
       .forEach(([n, v]) => stats.push({ label: n, value: formatMoney(v) }));
   } else {
-    // Monthly trend of the filtered category.
     const byMonth = {};
     for (const t of rows) {
-      const k = monthKey(new Date(t.tx_date));
+      const k = monthKey(parseDate(t.tx_date));
       byMonth[k] = (byMonth[k] || 0) + +t.amount;
     }
-    Object.entries(byMonth).sort((a, b) => b[0].localeCompare(a[0])).slice(0, 6)
+    Object.entries(byMonth)
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .slice(0, 6)
       .forEach(([k, v]) => stats.push({ label: k, value: formatMoney(v) }));
   }
   return stats;

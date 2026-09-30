@@ -1,19 +1,34 @@
-// Monthly analysis: a bank-statement-style report for the month.
-//  - summary (income first, then expenses) + opening/closing balance
-//  - month metrics (savings, budgets respected, goals, etc.)
-//  - detailed expense-distribution chart
-//  - full list of incoming and outgoing movements
-//  - export to a tidy PDF with logo and app name as a watermark
+// Analisi mensile in formato estratto conto, esportabile in PDF tramite la stampa del browser.
 import { state, selectors } from "../store.js";
-import { el, qs, formatMoney, formatDate, isSameMonth, monthKey } from "../utils.js";
+import {
+  el,
+  qs,
+  formatMoney,
+  formatDate,
+  isSameMonth,
+  monthKey,
+  parseDate,
+  escapeHtml as esc,
+  toast,
+} from "../utils.js";
 import { icon, iconEl, brandMark } from "../icons.js";
 import { donutChart, catColor } from "../chart.js";
 
 let refDate = new Date();
 
 const MONTHS = [
-  "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno",
-  "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre",
+  "gennaio",
+  "febbraio",
+  "marzo",
+  "aprile",
+  "maggio",
+  "giugno",
+  "luglio",
+  "agosto",
+  "settembre",
+  "ottobre",
+  "novembre",
+  "dicembre",
 ];
 const monthLabel = (d) => `${cap(MONTHS[d.getMonth()])} ${d.getFullYear()}`;
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
@@ -28,7 +43,10 @@ export function render(container) {
       ]),
       el("div", { class: "analysis-tools" }, [
         monthPicker(),
-        el("button", { class: "btn btn--primary", id: "analysis-pdf" }, [iconEl("download", { size: 17 }), "Salva PDF"]),
+        el("button", { class: "btn btn--primary", id: "analysis-pdf" }, [
+          iconEl("download", { size: 17 }),
+          "Salva PDF",
+        ]),
       ]),
     ]),
     el("div", { id: "analysis-body" }),
@@ -64,7 +82,7 @@ function computeReport() {
   const days = isCurrentMonth ? now.getDate() : daysInMonth;
 
   const monthTx = state.transactions
-    .filter((t) => monthKey(new Date(t.tx_date)) === monthKey(refDate))
+    .filter((t) => monthKey(parseDate(t.tx_date)) === monthKey(refDate))
     .slice()
     .sort((a, b) => a.tx_date.localeCompare(b.tx_date) || a.title.localeCompare(b.title));
 
@@ -87,11 +105,19 @@ function computeReport() {
     .reduce((s, c) => s + +c.amount, 0);
 
   const spentMap = selectors.spentByCategory(refDate);
-  const budgetRows = state.budgets.map((b) => {
-    const name = selectors.categoryName(b.category_id);
-    const spent = spentMap[name] || 0;
-    return { name, limit: +b.monthly_limit, spent, over: spent - +b.monthly_limit, respected: spent <= +b.monthly_limit };
-  }).sort((a, b) => b.spent - a.spent);
+  const budgetRows = state.budgets
+    .map((b) => {
+      const name = selectors.categoryName(b.category_id);
+      const spent = spentMap[name] || 0;
+      return {
+        name,
+        limit: +b.monthly_limit,
+        spent,
+        over: spent - +b.monthly_limit,
+        respected: spent <= +b.monthly_limit,
+      };
+    })
+    .sort((a, b) => b.spent - a.spent);
   const respected = budgetRows.filter((r) => r.respected).length;
 
   const goalsReached = state.goals.filter((g) => g.target_amount && selectors.goalSaved(g.id) >= +g.target_amount);
@@ -108,11 +134,26 @@ function computeReport() {
   }
 
   return {
-    y, m, label: monthLabel(refDate), isCurrentMonth,
+    y,
+    m,
+    label: monthLabel(refDate),
+    isCurrentMonth,
     holder: `${state.profile.first_name || ""} ${state.profile.last_name || ""}`.trim() || "Titolare",
-    income, expense, net, saldoInizio, saldoFine,
-    incomeTx, expenseTx, monthTx, byCat, topCat,
-    savedThisMonth, budgetRows, respected, goalsReached, advice,
+    income,
+    expense,
+    net,
+    saldoInizio,
+    saldoFine,
+    incomeTx,
+    expenseTx,
+    monthTx,
+    byCat,
+    topCat,
+    savedThisMonth,
+    budgetRows,
+    respected,
+    goalsReached,
+    advice,
     avgPerDay: days ? expense / days : 0,
     days,
   };
@@ -148,52 +189,61 @@ function renderBody() {
   holder.append(
     coverCard(d, step()),
 
-    // month metrics
     el("div", { class: "an-metrics", ...step() }, [
       metric("Risparmi del mese", formatMoney(d.savedThisMonth), "savings", "savings"),
       metric("Budget rispettati", `${d.respected} / ${state.budgets.length || 0}`, "wallet", "budget"),
       metric("Obiettivi raggiunti", String(d.goalsReached.length), "trophy", "savings"),
       metric("Spesa media al giorno", formatMoney(d.avgPerDay), "calendar", "expense"),
-      metric("Categoria più costosa", d.topCat ? d.topCat[0] : "—", "chart", "neutral", d.topCat ? formatMoney(d.topCat[1]) : null),
+      metric(
+        "Categoria più costosa",
+        d.topCat ? d.topCat[0] : "—",
+        "chart",
+        "neutral",
+        d.topCat ? formatMoney(d.topCat[1]) : null
+      ),
     ]),
 
-    // distribution chart
-    card(step(), "Distribuzione delle spese", d.label,
+    card(
+      step(),
+      "Distribuzione delle spese",
+      d.label,
       d.byCat.length
-        ? el("div", { class: "an-dist" }, [
-            donutChart(d.byCat, { showLegend: false }),
-            catRank(d.byCat, d.expense),
-          ])
+        ? el("div", { class: "an-dist" }, [donutChart(d.byCat, { showLegend: false }), catRank(d.byCat, d.expense)])
         : el("p", { class: "muted", text: "Nessuna spesa in questo mese." })
     ),
 
-    // incoming movements (first)
     txSection(step(), "Movimenti in entrata", d.incomeTx, "in", d.income),
 
-    // outgoing movements (then)
     txSection(step(), "Movimenti in uscita", d.expenseTx, "out", d.expense),
 
-    // budgets
-    card(step(), "Budget del mese", d.label,
+    card(
+      step(),
+      "Budget del mese",
+      d.label,
       d.budgetRows.length
-        ? el("ul", { class: "report-list" }, d.budgetRows.map((r) =>
-            el("li", {}, [
-              el("span", { text: r.name }),
-              el("span", { class: "muted", text: `${formatMoney(r.spent)} / ${formatMoney(r.limit)}` }),
-              el("strong", { class: r.respected ? "tx-amount--in" : "tx-amount--out", text: r.respected ? "Rispettato" : `+${formatMoney(r.over)}` }),
-            ])
-          ))
+        ? el(
+            "ul",
+            { class: "report-list" },
+            d.budgetRows.map((r) =>
+              el("li", {}, [
+                el("span", { text: r.name }),
+                el("span", { class: "muted", text: `${formatMoney(r.spent)} / ${formatMoney(r.limit)}` }),
+                el("strong", {
+                  class: r.respected ? "tx-amount--in" : "tx-amount--out",
+                  text: r.respected ? "Rispettato" : `+${formatMoney(r.over)}`,
+                }),
+              ])
+            )
+          )
         : el("p", { class: "muted", text: "Nessun budget impostato." })
     ),
 
-    // advice
     el("section", { class: "card glass an-advice", ...step() }, [
       el("h3", {}, [el("span", { class: "icn-wrap", html: icon("lightbulb", { size: 16 }) }), "Consiglio"]),
       el("p", { text: d.advice }),
-    ]),
+    ])
   );
 
-  // animated counters
   holder.querySelectorAll("[data-count]").forEach((n) => animateValue(n, +n.dataset.count));
 }
 
@@ -259,42 +309,64 @@ function card(attrs, title, subtitle, content) {
 
 function catRank(byCat, total) {
   const max = byCat[0]?.[1] || 1;
-  return el("ul", { class: "cat-rank" }, byCat.slice(0, 8).map(([name, v], i) => {
-    const color = catColor(i);
-    const pct = total ? Math.round((v / total) * 100) : 0;
-    return el("li", { class: "cat-rank__li", style: `--i:${i}` }, [
-      el("span", { class: "cat-rank__name" }, [
-        el("span", { class: "cat-rank__dot", style: `background:${color}` }),
-        el("span", { class: "cat-rank__label", text: name }),
-      ]),
-      el("span", { class: "cat-rank__bar" }, [
-        el("span", { class: "cat-rank__fill", style: `--w:${Math.max(4, (v / max) * 100)}%; background:${color}` }),
-      ]),
-      el("span", { class: "cat-rank__val" }, [
-        el("strong", { text: formatMoney(v) }),
-        el("span", { class: "cat-rank__pct", text: `${pct}%` }),
-      ]),
-    ]);
-  }));
+  return el(
+    "ul",
+    { class: "cat-rank" },
+    byCat.slice(0, 8).map(([name, v], i) => {
+      const color = catColor(i);
+      const pct = total ? Math.round((v / total) * 100) : 0;
+      return el("li", { class: "cat-rank__li", style: `--i:${i}` }, [
+        el("span", { class: "cat-rank__name" }, [
+          el("span", { class: "cat-rank__dot", style: `background:${color}` }),
+          el("span", { class: "cat-rank__label", text: name }),
+        ]),
+        el("span", { class: "cat-rank__bar" }, [
+          el("span", { class: "cat-rank__fill", style: `--w:${Math.max(4, (v / max) * 100)}%; background:${color}` }),
+        ]),
+        el("span", { class: "cat-rank__val" }, [
+          el("strong", { text: formatMoney(v) }),
+          el("span", { class: "cat-rank__pct", text: `${pct}%` }),
+        ]),
+      ]);
+    })
+  );
 }
 
 function txSection(attrs, title, rows, dir, total) {
   return el("section", { class: "card glass stats-card an-txs", ...attrs }, [
     el("div", { class: "stats-card__head" }, [
       el("h3", { text: title }),
-      el("span", { class: `an-txs__total an-txs__total--${dir}`, text: `${dir === "in" ? "+ " : "− "}${formatMoney(total)}` }),
+      el("span", {
+        class: `an-txs__total an-txs__total--${dir}`,
+        text: `${dir === "in" ? "+ " : "− "}${formatMoney(total)}`,
+      }),
     ]),
     rows.length
-      ? el("ul", { class: "an-tx-list" }, rows.map((t, k) =>
-          el("li", { class: "an-tx", style: `--i:${Math.min(k, 16)}` }, [
-            el("span", { class: `an-tx__ic an-tx__ic--${dir}`, html: icon(dir === "in" ? "arrowUp" : "arrowDown", { size: 14 }) }),
-            el("div", { class: "an-tx__body" }, [
-              el("strong", { text: t.title }),
-              el("span", { class: "an-tx__meta muted", text: [formatDate(t.tx_date), t.category_name, t.payment_method === "CONTANTI" ? "Contanti" : "Carta"].filter(Boolean).join(" · ") }),
-            ]),
-            el("span", { class: `tx-amount tx-amount--${dir}`, text: `${dir === "in" ? "+ " : "− "}${formatMoney(+t.amount)}` }),
-          ])
-        ))
+      ? el(
+          "ul",
+          { class: "an-tx-list" },
+          rows.map((t, k) =>
+            el("li", { class: "an-tx", style: `--i:${Math.min(k, 16)}` }, [
+              el("span", {
+                class: `an-tx__ic an-tx__ic--${dir}`,
+                html: icon(dir === "in" ? "arrowUp" : "arrowDown", { size: 14 }),
+              }),
+              el("div", { class: "an-tx__body" }, [
+                el("strong", { text: t.title }),
+                el("span", {
+                  class: "an-tx__meta muted",
+                  text: [formatDate(t.tx_date), t.category_name, t.payment_method === "CONTANTI" ? "Contanti" : "Carta"]
+                    .filter(Boolean)
+                    .join(" · "),
+                }),
+              ]),
+              el("span", {
+                class: `tx-amount tx-amount--${dir}`,
+                text: `${dir === "in" ? "+ " : "− "}${formatMoney(+t.amount)}`,
+              }),
+            ])
+          )
+        )
       : el("p", { class: "muted", text: dir === "in" ? "Nessuna entrata registrata." : "Nessuna spesa registrata." }),
   ]);
 }
@@ -311,17 +383,23 @@ function animateValue(node, to) {
   requestAnimationFrame(tick);
 }
 
-// PDF export (new window + print).
 function exportPDF(d) {
   const w = window.open("", "_blank", "width=900,height=1200");
   if (!w) {
-    alert("Consenti le finestre pop-up per salvare il report in PDF.");
+    toast("Consenti le finestre pop-up per salvare il report in PDF.", "error");
     return;
   }
   w.document.open();
   w.document.write(reportHTML(d));
   w.document.close();
-  const done = () => { try { w.focus(); w.print(); } catch { /* no-op */ } };
+  const done = () => {
+    try {
+      w.focus();
+      w.print();
+    } catch {
+      // Finestra chiusa dall'utente prima della stampa.
+    }
+  };
   const ready = () => {
     const fonts = w.document.fonts && w.document.fonts.ready ? w.document.fonts.ready : Promise.resolve();
     fonts.then(() => setTimeout(done, 250)).catch(() => setTimeout(done, 400));
@@ -331,16 +409,26 @@ function exportPDF(d) {
 }
 
 function reportHTML(d) {
-  const gen = new Date().toLocaleString("it-IT", { day: "2-digit", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const gen = new Date().toLocaleString("it-IT", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   const donut = donutChart(d.byCat, { showLegend: false, size: 150 }).outerHTML;
 
   const catTotal = d.expense || 1;
-  const distBars = d.byCat.map(([name, v], i) => `
+  const distBars = d.byCat
+    .map(
+      ([name, v], i) => `
     <div class="pdf-cat">
       <span class="pdf-cat__n"><i style="background:${catColor(i)}"></i>${esc(name)}</span>
       <span class="pdf-cat__track"><i style="width:${Math.max(3, (v / (d.byCat[0][1] || 1)) * 100)}%;background:${catColor(i)}"></i></span>
       <span class="pdf-cat__v">${formatMoney(v)} · ${Math.round((v / catTotal) * 100)}%</span>
-    </div>`).join("");
+    </div>`
+    )
+    .join("");
 
   const txTable = (rows, dir, total) => `
     <table class="pdf-tx">
@@ -349,13 +437,21 @@ function reportHTML(d) {
         <th style="width:12%">Metodo</th><th style="width:16%;text-align:right">Importo</th>
       </tr></thead>
       <tbody>
-        ${rows.length ? rows.map((t) => `<tr>
+        ${
+          rows.length
+            ? rows
+                .map(
+                  (t) => `<tr>
           <td>${formatDate(t.tx_date)}</td>
           <td>${esc(t.title)}${t.description ? `<span class="pdf-desc">${esc(t.description)}</span>` : ""}</td>
           <td>${esc(t.category_name || "—")}</td>
           <td>${t.payment_method === "CONTANTI" ? "Contanti" : "Carta"}</td>
           <td class="r ${dir === "in" ? "in" : "out"}">${dir === "in" ? "+ " : "− "}${formatMoney(+t.amount)}</td>
-        </tr>`).join("") : `<tr><td colspan="5" class="muted">Nessun movimento.</td></tr>`}
+        </tr>`
+                )
+                .join("")
+            : `<tr><td colspan="5" class="muted">Nessun movimento.</td></tr>`
+        }
       </tbody>
       <tfoot><tr>
         <td colspan="4">Totale ${dir === "in" ? "entrate" : "uscite"} (${rows.length})</td>
@@ -363,16 +459,22 @@ function reportHTML(d) {
       </tr></tfoot>
     </table>`;
 
-  const budgetTable = d.budgetRows.length ? `
+  const budgetTable = d.budgetRows.length
+    ? `
     <table class="pdf-tx pdf-tx--budget">
       <thead><tr><th>Categoria</th><th style="width:22%;text-align:right">Speso</th><th style="width:22%;text-align:right">Limite</th><th style="width:20%;text-align:right">Esito</th></tr></thead>
-      <tbody>${d.budgetRows.map((r) => `<tr>
+      <tbody>${d.budgetRows
+        .map(
+          (r) => `<tr>
         <td>${esc(r.name)}</td>
         <td class="r">${formatMoney(r.spent)}</td>
         <td class="r">${formatMoney(r.limit)}</td>
         <td class="r ${r.respected ? "in" : "out"}">${r.respected ? "Rispettato" : "+" + formatMoney(r.over)}</td>
-      </tr>`).join("")}</tbody>
-    </table>` : `<p class="muted">Nessun budget impostato.</p>`;
+      </tr>`
+        )
+        .join("")}</tbody>
+    </table>`
+    : `<p class="muted">Nessun budget impostato.</p>`;
 
   return `<!doctype html><html lang="it"><head><meta charset="utf-8">
 <title>Report ${esc(d.label)} — MyWallet</title>
@@ -477,13 +579,17 @@ function reportHTML(d) {
       <div class="metric"><span class="k">Categoria top</span><div class="v">${d.topCat ? esc(d.topCat[0]) : "—"}</div></div>
     </div>
 
-    ${d.byCat.length ? `<div class="section">
+    ${
+      d.byCat.length
+        ? `<div class="section">
       <h2>Distribuzione delle spese</h2>
       <div class="dist">
         ${donut}
         <div class="pdf-cats">${distBars}</div>
       </div>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
 
     <div class="section">
       <h2>Movimenti in entrata <span class="t in">+ ${formatMoney(d.income)}</span></h2>
@@ -505,10 +611,4 @@ function reportHTML(d) {
     <div class="foot">Report generato da <b>MyWallet</b> il ${esc(gen)} · Titolare: ${esc(d.holder)}</div>
   </div>
 </body></html>`;
-}
-
-function esc(s) {
-  return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
-    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-  ));
 }

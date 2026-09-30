@@ -1,10 +1,13 @@
-// App bootstrap: auth gate, mobile-first layout, router, realtime.
+// Bootstrap dell'app: controllo autenticazione, layout, router basato su hash e realtime.
 import { getSession, onAuthChange, renderAuthScreen, signOut } from "./auth.js";
 import { state, on, loadAll, startRealtime, stopRealtime, applyTheme } from "./store.js";
 import { profile as profileApi } from "./data.js";
 import { qs, el, toast } from "./utils.js";
 import { icon, brandMark } from "./icons.js";
 import { openOnboarding } from "./onboarding.js";
+import { generateRecurring } from "./recurring.js";
+import { generateSubscriptions } from "./subscriptions.js";
+import { isDemoUser, ensureDemoData, demoBanner } from "./demo.js";
 
 import { render as dashboard } from "./views/dashboard.js";
 import { render as transactions, openTxModal } from "./views/transactions.js";
@@ -18,8 +21,6 @@ import { render as trips } from "./views/trips.js";
 import { render as stats } from "./views/stats.js";
 import { render as analysis } from "./views/analysis.js";
 import { render as settings } from "./views/settings.js";
-import { generateRecurring } from "./recurring.js";
-import { generateSubscriptions } from "./subscriptions.js";
 
 const ROUTES = {
   dashboard: { label: "Dashboard", icon: "dashboard", render: dashboard },
@@ -36,7 +37,7 @@ const ROUTES = {
   impostazioni: { label: "Impostazioni", icon: "settings", render: settings },
 };
 
-// Bottom tab bar (mobile): Home · Movimenti · [ + ] · Cerca · Report
+// Barra di navigazione inferiore (mobile), ai lati del pulsante "+".
 const BOTTOM_LEFT = [
   { key: "dashboard", label: "Home" },
   { key: "transazioni", label: "Movimenti" },
@@ -49,6 +50,21 @@ const BOTTOM_RIGHT = [
 const app = qs("#app");
 let currentRoute = "dashboard";
 let booted = false;
+let banner = null;
+
+on("change", () => {
+  if (!booted) return;
+  renderRoute();
+  updateThemeToggle();
+});
+document.addEventListener("keydown", onShortcut);
+window.addEventListener("hashchange", () => {
+  const r = location.hash.slice(1);
+  if (ROUTES[r] && r !== currentRoute) {
+    currentRoute = r;
+    renderRoute();
+  }
+});
 
 init();
 
@@ -59,46 +75,80 @@ async function init() {
 }
 
 async function handleSession(session) {
-  if (session?.user) {
-    if (!booted) {
-      booted = true;
-      renderShell();
-      await loadAll(session.user);
-      startRealtime(session.user.id);
-      on("change", onStoreChange);
-      renderRoute();
-      if (!state.profile?.onboarding_completed) {
-        openOnboarding({});
-      }
-      try {
-        const n = await generateRecurring();
-        if (n) toast(n === 1 ? "1 transazione ricorrente generata" : `${n} transazioni ricorrenti generate`, "success");
-      } catch (err) {
-        console.warn(err);
-      }
-      try {
-        const n = await generateSubscriptions();
-        if (n) toast(n === 1 ? "1 spesa da abbonamento registrata" : `${n} spese da abbonamento registrate`, "success");
-      } catch (err) {
-        console.warn(err);
-      }
-    }
-  } else {
+  if (!session?.user) {
     booted = false;
+    banner?.stop();
+    banner = null;
     stopRealtime();
     applyTheme("light");
-    renderAuthScreen(app, () => {});
+    renderAuthScreen(app);
+    return;
+  }
+  if (booted) return;
+  booted = true;
+
+  const user = session.user;
+  renderShell(user);
+
+  // I dati della demo vanno caricati prima di leggerli, altrimenti l'app si aprirebbe vuota.
+  if (isDemoUser(user)) {
+    state.loading = true;
+    renderRoute();
+    try {
+      await ensureDemoData();
+    } catch (err) {
+      toast(`Impossibile avviare la demo: ${err.message}`, "error");
+      await signOut();
+      return;
+    }
+  }
+
+  await loadAll(user);
+  startRealtime(session.user.id);
+  if (!state.profile?.onboarding_completed) openOnboarding();
+
+  await runGenerator(generateRecurring, (n) =>
+    n === 1 ? "1 transazione ricorrente generata" : `${n} transazioni ricorrenti generate`
+  );
+  await runGenerator(generateSubscriptions, (n) =>
+    n === 1 ? "1 spesa da abbonamento registrata" : `${n} spese da abbonamento registrate`
+  );
+}
+
+async function runGenerator(generate, message) {
+  try {
+    const n = await generate();
+    if (n) toast(message(n), "success");
+  } catch (err) {
+    console.warn(err);
   }
 }
 
-function onStoreChange() {
-  renderRoute();
-  updateThemeToggle();
+// Scorciatoie: 1..9 aprono le sezioni, "/" apre l'assistente, Esc chiude il menu.
+function onShortcut(e) {
+  if (!booted || e.target.matches("input, textarea, select")) return;
+  if (e.key === "/") {
+    e.preventDefault();
+    navigate("assistente");
+    requestAnimationFrame(() => qs("#assistant-input")?.focus());
+    return;
+  }
+  if (e.key === "Escape") qs(".sidebar")?.classList.remove("is-open");
+  const keys = Object.keys(ROUTES);
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= keys.length) navigate(keys[n - 1]);
 }
 
-function renderShell() {
+function renderShell(user) {
   app.innerHTML = "";
   app.classList.add("app");
+
+  const navButton = (iconName, label, attrs) =>
+    el("button", {
+      class: "nav-link",
+      html: `<span class="nav-link__icon">${icon(iconName)}</span><span>${label}</span>`,
+      ...attrs,
+    });
 
   const drawer = el("nav", { class: "sidebar" }, [
     el("div", { class: "sidebar__brand" }, [
@@ -112,54 +162,41 @@ function renderShell() {
         .filter(([key]) => key !== "impostazioni")
         .map(([key, r], i) =>
           el("li", { style: `--i:${i}` }, [
-            el("button", {
-              class: "nav-link",
-              "data-route": key,
-              onclick: () => navigate(key),
-              html: `<span class="nav-link__icon">${icon(r.icon)}</span><span>${r.label}</span>`,
-            }),
+            navButton(r.icon, r.label, { "data-route": key, onclick: () => navigate(key) }),
           ])
         )
     ),
     el("div", { class: "sidebar__foot" }, [
-      el("button", {
-        class: "nav-link js-theme-toggle",
-        onclick: toggleTheme,
-        html: `<span class="nav-link__icon">${icon("moon")}</span><span>Tema</span>`,
-      }),
-      el("button", {
-        class: "nav-link",
-        onclick: () => openOnboarding({}),
-        html: `<span class="nav-link__icon">${icon("lightbulb")}</span><span>Tutorial</span>`,
-      }),
-      el("button", {
-        class: "nav-link",
-        "data-route": "impostazioni",
-        onclick: () => navigate("impostazioni"),
-        html: `<span class="nav-link__icon">${icon("settings")}</span><span>Impostazioni</span>`,
-      }),
-      el("button", {
-        class: "nav-link",
-        onclick: async () => { await signOut(); },
-        html: `<span class="nav-link__icon">${icon("logout")}</span><span>Esci</span>`,
-      }),
+      navButton("moon", "Tema", { class: "nav-link js-theme-toggle", onclick: toggleTheme }),
+      navButton("lightbulb", "Tutorial", { onclick: () => openOnboarding() }),
+      navButton("settings", "Impostazioni", { "data-route": "impostazioni", onclick: () => navigate("impostazioni") }),
+      navButton("logout", "Esci", { onclick: () => signOut() }),
     ]),
   ]);
 
   const closeDrawer = () => drawer.classList.remove("is-open");
-  const toggleDrawer = () => drawer.classList.toggle("is-open");
   drawer.addEventListener("click", (e) => {
     if (e.target.closest(".nav-link:not(.js-theme-toggle)")) closeDrawer();
   });
 
   const appBar = el("header", { class: "app-bar" }, [
-    el("button", { class: "icon-btn", "aria-label": "Menu", onclick: toggleDrawer, html: icon("menu", { size: 22 }) }),
+    el("button", {
+      class: "icon-btn",
+      "aria-label": "Menu",
+      onclick: () => drawer.classList.toggle("is-open"),
+      html: icon("menu", { size: 22 }),
+    }),
     el("span", { class: "app-bar__brand" }, [
       el("span", { class: "icn-wrap", html: brandMark(22) }),
       el("span", { text: "MyWallet" }),
     ]),
     el("span", { class: "app-bar__spacer" }),
-    el("button", { class: "icon-btn js-theme-toggle", "aria-label": "Cambia tema", onclick: toggleTheme, html: icon("moon", { size: 22 }) }),
+    el("button", {
+      class: "icon-btn js-theme-toggle",
+      "aria-label": "Cambia tema",
+      onclick: toggleTheme,
+      html: icon("moon", { size: 22 }),
+    }),
   ]);
 
   const scrim = el("div", { class: "drawer-scrim", onclick: closeDrawer });
@@ -173,39 +210,28 @@ function renderShell() {
       html: `${icon(ROUTES[key].icon, { size: 21 })}<span>${label}</span>`,
     });
 
-  const bottomNav = el(
-    "nav",
-    { class: "bottom-nav", "aria-label": "Navigazione" },
-    [
-      ...BOTTOM_LEFT.map(bottomBtn),
-      el("button", {
-        class: "bottom-nav__fab",
-        "aria-label": "Aggiungi spesa o entrata",
-        title: "Aggiungi spesa o entrata",
-        onclick: () => openTxModal(),
-        html: icon("plus", { size: 24, stroke: 2.4 }),
-      }),
-      ...BOTTOM_RIGHT.map(bottomBtn),
-    ]
-  );
+  const bottomNav = el("nav", { class: "bottom-nav", "aria-label": "Navigazione" }, [
+    ...BOTTOM_LEFT.map(bottomBtn),
+    el("button", {
+      class: "bottom-nav__fab",
+      "aria-label": "Aggiungi spesa o entrata",
+      title: "Aggiungi spesa o entrata",
+      onclick: () => openTxModal(),
+      html: icon("plus", { size: 24, stroke: 2.4 }),
+    }),
+    ...BOTTOM_RIGHT.map(bottomBtn),
+  ]);
 
   app.append(appBar, drawer, scrim, main, bottomNav);
 
-  // Keyboard shortcuts: 1..9 for the sections, "/" for the assistant.
-  document.addEventListener("keydown", (e) => {
-    if (e.target.matches("input, textarea, select")) return;
-    if (e.key === "/") {
-      e.preventDefault();
-      navigate("assistente");
-      requestAnimationFrame(() => qs("#assistant-input")?.focus());
-      return;
-    }
-    if (e.key === "Escape") closeDrawer();
-    const keys = Object.keys(ROUTES);
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= keys.length) navigate(keys[n - 1]);
-  });
-
+  if (isDemoUser(user)) {
+    banner = demoBanner(user, {
+      onExpire: () => {
+        toast("La demo è terminata: i dati di esempio sono stati azzerati.", "info");
+        signOut();
+      },
+    });
+  }
   updateThemeToggle();
 }
 
@@ -217,24 +243,16 @@ function navigate(route) {
   renderRoute();
 }
 
-window.addEventListener("hashchange", () => {
-  const r = location.hash.slice(1);
-  if (ROUTES[r] && r !== currentRoute) {
-    currentRoute = r;
-    renderRoute();
-  }
-});
-
 function renderRoute() {
   const outlet = qs("#route-outlet");
   if (!outlet) return;
-  const route = ROUTES[location.hash.slice(1)] ? location.hash.slice(1) : currentRoute;
+  const hashRoute = location.hash.slice(1);
+  const route = ROUTES[hashRoute] ? hashRoute : currentRoute;
   currentRoute = route;
 
-  document.querySelectorAll("[data-route]").forEach((b) =>
-    b.classList.toggle("is-active", b.dataset.route === route)
-  );
+  document.querySelectorAll("[data-route]").forEach((b) => b.classList.toggle("is-active", b.dataset.route === route));
 
+  // Riavvia l'animazione di ingresso della vista.
   outlet.classList.remove("view-enter");
   void outlet.offsetWidth;
   outlet.classList.add("view-enter");
@@ -243,9 +261,11 @@ function renderRoute() {
 
   if (state.loading) {
     outlet.innerHTML = `<div class="view"><div class="skeleton-list">${"<div class='skeleton-row'></div>".repeat(4)}</div></div>`;
-    return;
+  } else {
+    ROUTES[route].render(outlet);
   }
-  ROUTES[route].render(outlet);
+  // Le view svuotano l'outlet: il banner della demo va reinserito dopo ogni rendering.
+  if (banner) outlet.prepend(banner.node);
 }
 
 async function toggleTheme() {
@@ -253,10 +273,9 @@ async function toggleTheme() {
   applyTheme(next);
   updateThemeToggle();
   try {
-    const updated = await profileApi.update({ theme: next });
-    state.profile = updated;
+    state.profile = await profileApi.update({ theme: next });
   } catch {
-    // Offline: the theme stays applied locally.
+    // Offline: il tema resta applicato localmente.
   }
 }
 

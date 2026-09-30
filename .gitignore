@@ -1,22 +1,25 @@
-# assets/js/config.js is INTENTIONALLY committed: it holds only PUBLIC values
-# (project URL + publishable anon key). No provider secret lives there — the
-# Mistral key is a Supabase Secret used only by the "chat-ai" Edge Function.
-# Data is protected by Row Level Security (see DB.sql), not by hiding this key.
+# assets/js/config.js è versionato di proposito: contiene solo valori pubblici (URL del progetto
+# e chiave publishable). La API key di Mistral è un Secret della Edge Function "chat-ai".
 
-# OS / editor
+# Sistema operativo / editor
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
 *.swp
 
-# Dependencies / logs
+# Dipendenze / log
 node_modules/
 npm-debug.log*
 yarn-error.log*
+*.log
 
-# Supabase CLI — local state / secrets, never commit
+# Variabili d'ambiente
+.env
+.env.*
+!.env.example
+
+# Stato locale della Supabase CLI
 supabase/.branches/
 supabase/.temp/
 supabase/.env
-.env

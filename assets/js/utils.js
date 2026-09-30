@@ -1,9 +1,13 @@
-// Shared utilities: DOM, formatting, toasts, modals, animations.
 import { icon } from "./icons.js";
 
 /* ---------- DOM ---------- */
 export const qs = (sel, root = document) => root.querySelector(sel);
 
+/**
+ * Crea un elemento DOM.
+ * Attributi speciali: `class`, `text` (textContent), `html` (innerHTML: solo markup
+ * fidato, mai dati dell'utente), `onXxx` (listener). I valori null/false sono ignorati.
+ */
 export function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs)) {
@@ -23,7 +27,24 @@ export function el(tag, attrs = {}, children = []) {
   return node;
 }
 
-/* ---------- Formatting ---------- */
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+export const escapeHtml = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+
+/* ---------- Testo ---------- */
+
+// Titoli e nomi vengono salvati in sentence case con gli spazi compattati.
+export const normalizeTitle = (s) => {
+  if (s == null) return s;
+  const t = String(s).trim().replace(/\s+/g, " ");
+  if (!t) return t;
+  return t.charAt(0).toLocaleUpperCase("it-IT") + t.slice(1).toLocaleLowerCase("it-IT");
+};
+
+// Confronto case-insensitive (es. nomi di categoria).
+export const sameText = (a, b) =>
+  String(a ?? "").toLocaleLowerCase("it-IT") === String(b ?? "").toLocaleLowerCase("it-IT");
+
+/* ---------- Formattazione ---------- */
 let currency = "EUR";
 export const setCurrency = (c) => (currency = c || "EUR");
 
@@ -38,28 +59,39 @@ export function formatMoney(value, { sign = false } = {}) {
   return (n < 0 ? "− " : "") + formatted;
 }
 
-// Normalised transaction title: always UPPERCASE, whitespace collapsed.
-// Applied on save so every transaction looks uniform across the app.
-export const normalizeTitle = (s) =>
-  s == null ? s : String(s).trim().replace(/\s+/g, " ").toLocaleUpperCase("it-IT");
-
 export function formatDate(value) {
   if (!value) return "";
-  return new Date(value).toLocaleDateString("it-IT", {
+  return parseDate(value).toLocaleDateString("it-IT", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
 }
 
-// Local date (not UTC) in YYYY-MM-DD format.
+/* ---------- Date ---------- */
+
+/**
+ * Converte una data in `Date`. Le stringhe "YYYY-MM-DD" (colonne `date` di Postgres)
+ * sono interpretate in ora locale: `new Date("2026-03-01")` userebbe UTC e, nei fusi
+ * a ovest di Greenwich, restituirebbe il giorno precedente.
+ */
+export function parseDate(value) {
+  if (value instanceof Date) return new Date(value);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(value);
+}
+
 export const dateISO = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 export const todayISO = () => dateISO(new Date());
-export const monthKey = (d = new Date()) =>
-  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-export const isSameMonth = (dateStr, ref = new Date()) =>
-  monthKey(new Date(dateStr)) === monthKey(ref);
+export const monthKey = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+export const isSameMonth = (dateStr, ref = new Date()) => monthKey(parseDate(dateStr)) === monthKey(ref);
+
+// Mesi interi compresi tra due date (negativo se b precede a).
+export function monthsBetween(a, b) {
+  const m = (b.getFullYear() - a.getFullYear()) * 12 + (b.getMonth() - a.getMonth());
+  return b.getDate() >= a.getDate() ? m : m - 1;
+}
 
 /* ---------- Toast ---------- */
 export function toast(message, type = "info") {
@@ -77,7 +109,7 @@ export function toast(message, type = "info") {
   }, 3200);
 }
 
-/* ---------- Modal ---------- */
+/* ---------- Modale ---------- */
 export function openModal({ title, body, onClose }) {
   closeModal();
   const overlay = el("div", { class: "modal-overlay", id: "app-modal" });
@@ -107,10 +139,11 @@ function escToClose(e) {
   if (e.key === "Escape") closeModal();
 }
 
-// In-app replacement for window.confirm(): native dialogs are unreliable in
-// some contexts (e.g. iOS home-screen apps silently suppress them), and this
-// also matches the app's own visual style.
-export function confirmDialog(message, { title = "Conferma", confirmLabel = "Elimina", cancelLabel = "Annulla", danger = true } = {}) {
+// Sostituisce window.confirm(), che nelle web app installate su iOS viene soppresso.
+export function confirmDialog(
+  message,
+  { title = "Conferma", confirmLabel = "Elimina", cancelLabel = "Annulla", danger = true } = {}
+) {
   return new Promise((resolve) => {
     let done = false;
     const finish = (v) => {
@@ -120,14 +153,20 @@ export function confirmDialog(message, { title = "Conferma", confirmLabel = "Eli
       closeModal();
       resolve(v);
     };
-    const onKey = (e) => { if (e.key === "Escape") finish(false); };
+    const onKey = (e) => {
+      if (e.key === "Escape") finish(false);
+    };
     document.addEventListener("keydown", onKey);
 
     const body = el("div", { class: "confirm-dialog" }, [
       el("p", { class: "confirm-dialog__text", text: message }),
       el("div", { class: "confirm-dialog__actions" }, [
         el("button", { type: "button", class: "btn btn--ghost", onclick: () => finish(false) }, cancelLabel),
-        el("button", { type: "button", class: `btn ${danger ? "btn--danger" : "btn--primary"}`, onclick: () => finish(true) }, confirmLabel),
+        el(
+          "button",
+          { type: "button", class: `btn ${danger ? "btn--danger" : "btn--primary"}`, onclick: () => finish(true) },
+          confirmLabel
+        ),
       ]),
     ]);
     openModal({ title, body, onClose: () => finish(false) });
@@ -144,7 +183,7 @@ export function closeModal(onClose) {
   if (typeof onClose === "function") onClose();
 }
 
-/* ---------- Animated counter ---------- */
+/* ---------- Contatore animato ---------- */
 export function animateCounter(node, to, { format = formatMoney, duration = 700 } = {}) {
   const from = Number(node.dataset.value || 0);
   const start = performance.now();
@@ -158,7 +197,7 @@ export function animateCounter(node, to, { format = formatMoney, duration = 700 
   requestAnimationFrame(tick);
 }
 
-/* ---------- Minimal emitter ---------- */
+/* ---------- Event emitter ---------- */
 export function createEmitter() {
   const map = new Map();
   return {
@@ -173,15 +212,13 @@ export function createEmitter() {
   };
 }
 
-/* ---------- Empty state ---------- */
-// `name` is the name of an icon (see icons.js).
-export const emptyState = (name, text) =>
+/* ---------- Varie ---------- */
+export const emptyState = (iconName, text) =>
   el("div", { class: "empty-state" }, [
-    el("div", { class: "empty-state__icon", html: icon(name, { size: 34, stroke: 1.6 }) }),
+    el("div", { class: "empty-state__icon", html: icon(iconName, { size: 34, stroke: 1.6 }) }),
     el("p", { text }),
   ]);
 
-/* ---------- Debounce ---------- */
 export function debounce(fn, wait = 250) {
   let t;
   return (...args) => {

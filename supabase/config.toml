@@ -1,9 +1,6 @@
-# Supabase project configuration.
-# `project_id` is overwritten by `supabase link --project-ref <your-ref>`.
+# `project_id` viene sovrascritto da `supabase link --project-ref <ref>`.
 project_id = "mywallet"
 
-# AI assistant proxy.
-# verify_jwt = true -> only authenticated users can invoke the function;
-# the browser client (supabaseClient.functions.invoke) attaches the session JWT.
+# Solo gli utenti autenticati possono invocare il proxy verso Mistral.
 [functions.chat-ai]
 verify_jwt = true

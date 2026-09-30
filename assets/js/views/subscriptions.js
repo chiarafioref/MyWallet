@@ -1,13 +1,19 @@
-// Subscriptions / recurring expenses.
-//  - control panel: active · monthly cost · yearly cost
-//  - subscription CRUD (add, edit, delete, pause/resume)
-//  - cost estimate (promo-aware) + end-of-promo alert
-//  - generated expenses flow into history / budgets / statistics
+// Abbonamenti: costi stimati tenendo conto delle promozioni. Gli addebiti sono generati
+// automaticamente da subscriptions.js come normali transazioni.
 import { state, selectors } from "../store.js";
 import { subscriptions as subApi } from "../data.js";
 import { buildForm } from "../form.js";
 import {
-  el, formatMoney, formatDate, todayISO, toast, openModal, closeModal, emptyState, animateCounter, confirmDialog,
+  el,
+  formatMoney,
+  formatDate,
+  todayISO,
+  toast,
+  openModal,
+  closeModal,
+  emptyState,
+  animateCounter,
+  confirmDialog,
 } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 import { generateSubscriptions } from "../subscriptions.js";
@@ -44,16 +50,22 @@ export function render(container) {
         el("h2", { text: "Abbonamenti" }),
         el("p", { class: "muted", text: "Il pannello di controllo delle tue spese ricorrenti" }),
       ]),
-      el("button", { class: "btn btn--primary", onclick: () => openSubModal() }, [iconEl("plus", { size: 18 }), "Nuovo abbonamento"]),
+      el("button", { class: "btn btn--primary", onclick: () => openSubModal() }, [
+        iconEl("plus", { size: 18 }),
+        "Nuovo abbonamento",
+      ]),
     ]),
 
-    // control panel
     el("section", { class: "card glass subs-panel", ...step() }, [
       el("div", { class: "subs-panel__glow" }),
       el("div", { class: "subs-panel__grid" }, [
         counter("Attivi", summary.count, "repeat", { int: true, sub: total ? `su ${total} totali` : "nessuno" }),
-        counter("Al mese", summary.monthly, "trendingDown", { sub: aRegime ? `poi ${formatMoney(summary.monthlyRegular)}` : "spesa ricorrente" }),
-        counter("All'anno", summary.yearly, "calendar", { sub: aRegime ? `poi ${formatMoney(summary.yearlyRegular)}` : "stima 12 mesi" }),
+        counter("Al mese", summary.monthly, "trendingDown", {
+          sub: aRegime ? `poi ${formatMoney(summary.monthlyRegular)}` : "spesa ricorrente",
+        }),
+        counter("All'anno", summary.yearly, "calendar", {
+          sub: aRegime ? `poi ${formatMoney(summary.yearlyRegular)}` : "stima 12 mesi",
+        }),
       ]),
       nextCharge
         ? el("div", { class: "subs-panel__next" }, [
@@ -69,7 +81,10 @@ export function render(container) {
 
     ...promo.map((p) =>
       el("section", { class: "card glass promo-alert", ...step() }, [
-        el("strong", {}, [el("span", { class: "icn-wrap", html: icon("alert", { size: 16 }) }), "Promozione in scadenza"]),
+        el("strong", {}, [
+          el("span", { class: "icn-wrap", html: icon("alert", { size: 16 }) }),
+          "Promozione in scadenza",
+        ]),
         el("p", {
           text: `${p.sub.name} passerà da ${formatMoney(p.from)} a ${formatMoney(p.to)} il ${formatDate(p.sub.promo_end_date)}. Il costo mensile aumenterà di ${formatMoney(p.monthlyDelta)}.`,
         }),
@@ -77,14 +92,22 @@ export function render(container) {
     ),
 
     state.subscriptions.length
-      ? el("div", { class: "sub-grid" }, state.subscriptions.map((s, k) => subCard(s, k)))
-      : el("div", { ...step() }, [emptyState("repeat", "Nessun abbonamento. Aggiungi Netflix, palestra, assicurazione…")]),
+      ? el(
+          "div",
+          { class: "sub-grid" },
+          state.subscriptions.map((s, k) => subCard(s, k))
+        )
+      : el("div", { ...step() }, [
+          emptyState("repeat", "Nessun abbonamento. Aggiungi Netflix, palestra, assicurazione…"),
+        ]),
   ]);
 
   container.append(view);
-  view.querySelectorAll("[data-counter]").forEach((n) =>
-    animateCounter(n, Number(n.dataset.counter), n.dataset.int ? { format: (x) => String(Math.round(x)) } : {})
-  );
+  view
+    .querySelectorAll("[data-counter]")
+    .forEach((n) =>
+      animateCounter(n, Number(n.dataset.counter), n.dataset.int ? { format: (x) => String(Math.round(x)) } : {})
+    );
 }
 
 function counter(label, value, iconName, { int = false, sub = null } = {}) {
@@ -126,7 +149,10 @@ function subCard(sub, k) {
         paused ? "Sospeso" : `Rinnovo ${formatDate(sub.next_payment_date)}`,
       ]),
       el("span", {}, [
-        el("span", { class: "icn-wrap", html: icon(sub.payment_method === "CONTANTI" ? "banknote" : "creditCard", { size: 14 }) }),
+        el("span", {
+          class: "icn-wrap",
+          html: icon(sub.payment_method === "CONTANTI" ? "banknote" : "creditCard", { size: 14 }),
+        }),
         sub.payment_method === "CONTANTI" ? "Contanti" : "Carta",
       ]),
     ]),
@@ -138,8 +164,18 @@ function subCard(sub, k) {
       : null,
     el("div", { class: "sub-card__actions" }, [
       el("button", { class: "btn btn--ghost btn--sm", onclick: () => openSubModal(sub) }, "Modifica"),
-      el("button", { class: "btn btn--ghost btn--sm", onclick: () => togglePause(sub) }, paused ? "Riattiva" : "Sospendi"),
-      el("button", { class: "icon-btn icon-btn--danger", html: icon("trash", { size: 17 }), title: "Elimina", "aria-label": "Elimina", onclick: () => remove(sub) }),
+      el(
+        "button",
+        { class: "btn btn--ghost btn--sm", onclick: () => togglePause(sub) },
+        paused ? "Riattiva" : "Sospendi"
+      ),
+      el("button", {
+        class: "icon-btn icon-btn--danger",
+        html: icon("trash", { size: 17 }),
+        title: "Elimina",
+        "aria-label": "Elimina",
+        onclick: () => remove(sub),
+      }),
     ]),
   ]);
 }
@@ -148,27 +184,87 @@ function openSubModal(sub = null) {
   const editing = !!sub;
   const body = buildForm(
     [
-      { name: "name", label: "Nome dell'abbonamento", required: true, value: sub?.name, placeholder: "Es. Netflix, palestra, assicurazione" },
-      { name: "amount", label: "Importo attuale (€)", type: "number", step: "0.01", min: "0.01", required: true, value: sub?.amount, placeholder: "9,99" },
-      { name: "category_id", label: "Categoria", type: "select", required: true, value: sub?.category_id, options: selectors.groupedExpenseCategories() },
-      { name: "payment_method", label: "Metodo di pagamento", type: "select", value: sub?.payment_method || "CARTA", options: [
-        { value: "CARTA", label: "Carta" }, { value: "CONTANTI", label: "Contanti" },
-      ]},
-      { name: "frequency", label: "Frequenza di addebito", type: "select", value: sub?.frequency || "MENSILE", options: FREQ },
       {
-        name: "interval_months", label: "Ogni quanti mesi", type: "number", min: "1", step: "1",
-        value: sub?.interval_months || 1, showIf: { field: "frequency", value: "PERSONALIZZATA" },
+        name: "name",
+        label: "Nome dell'abbonamento",
+        required: true,
+        value: sub?.name,
+        placeholder: "Es. Netflix, palestra, assicurazione",
+      },
+      {
+        name: "amount",
+        label: "Importo attuale (€)",
+        type: "number",
+        step: "0.01",
+        min: "0.01",
+        required: true,
+        value: sub?.amount,
+        placeholder: "9,99",
+      },
+      {
+        name: "category_id",
+        label: "Categoria",
+        type: "select",
+        required: true,
+        value: sub?.category_id,
+        options: selectors.groupedExpenseCategories(),
+      },
+      {
+        name: "payment_method",
+        label: "Metodo di pagamento",
+        type: "select",
+        value: sub?.payment_method || "CARTA",
+        options: [
+          { value: "CARTA", label: "Carta" },
+          { value: "CONTANTI", label: "Contanti" },
+        ],
+      },
+      {
+        name: "frequency",
+        label: "Frequenza di addebito",
+        type: "select",
+        value: sub?.frequency || "MENSILE",
+        options: FREQ,
+      },
+      {
+        name: "interval_months",
+        label: "Ogni quanti mesi",
+        type: "number",
+        min: "1",
+        step: "1",
+        value: sub?.interval_months || 1,
+        showIf: { field: "frequency", value: "PERSONALIZZATA" },
         hint: "Es. 3 per un addebito trimestrale",
       },
-      { name: "next_payment_date", label: "Prossimo pagamento", type: "date", required: true, value: sub?.next_payment_date || todayISO() },
-      { name: "promo", label: "È in offerta / prezzo promozionale", type: "checkbox", value: sub?.promo, hint: "Attiva se ora paghi meno del prezzo pieno" },
       {
-        name: "promo_end_date", label: "Quando finisce la promozione", type: "date",
-        value: sub?.promo_end_date || "", showIf: "promo",
+        name: "next_payment_date",
+        label: "Prossimo pagamento",
+        type: "date",
+        required: true,
+        value: sub?.next_payment_date || todayISO(),
       },
       {
-        name: "regular_amount", label: "Prezzo pieno dopo la promozione (€)", type: "number", step: "0.01", min: "0.01",
-        value: sub?.regular_amount || "", showIf: "promo",
+        name: "promo",
+        label: "È in offerta / prezzo promozionale",
+        type: "checkbox",
+        value: sub?.promo,
+        hint: "Attiva se ora paghi meno del prezzo pieno",
+      },
+      {
+        name: "promo_end_date",
+        label: "Quando finisce la promozione",
+        type: "date",
+        value: sub?.promo_end_date || "",
+        showIf: "promo",
+      },
+      {
+        name: "regular_amount",
+        label: "Prezzo pieno dopo la promozione (€)",
+        type: "number",
+        step: "0.01",
+        min: "0.01",
+        value: sub?.regular_amount || "",
+        showIf: "promo",
       },
     ],
     {
@@ -184,7 +280,8 @@ function openSubModal(sub = null) {
           category_name: selectors.categoryName(v.category_id),
           payment_method: v.payment_method,
           frequency: v.frequency,
-          interval_months: v.frequency === "PERSONALIZZATA" ? Math.max(1, v.interval_months || 1) : v.frequency === "ANNUALE" ? 12 : 1,
+          interval_months:
+            v.frequency === "PERSONALIZZATA" ? Math.max(1, v.interval_months || 1) : v.frequency === "ANNUALE" ? 12 : 1,
           next_payment_date: v.next_payment_date,
           start_date: v.next_payment_date,
           end_date: null,
@@ -199,8 +296,11 @@ function openSubModal(sub = null) {
           toast(editing ? "Abbonamento aggiornato" : "Abbonamento aggiunto", "success");
           try {
             const n = await generateSubscriptions();
-            if (n) toast(n === 1 ? "1 spesa da abbonamento registrata" : `${n} spese da abbonamento registrate`, "success");
-          } catch (err) { console.warn(err); }
+            if (n)
+              toast(n === 1 ? "1 spesa da abbonamento registrata" : `${n} spese da abbonamento registrate`, "success");
+          } catch (err) {
+            console.warn(err);
+          }
         } catch (err) {
           toast(err.message, "error");
         }
@@ -220,7 +320,8 @@ async function togglePause(sub) {
 }
 
 async function remove(sub) {
-  if (!(await confirmDialog(`Eliminare l'abbonamento "${sub.name}"? Le spese già registrate restano nello storico.`))) return;
+  if (!(await confirmDialog(`Eliminare l'abbonamento "${sub.name}"? Le spese già registrate restano nello storico.`)))
+    return;
   try {
     await subApi.remove(sub.id);
     toast("Abbonamento eliminato", "success");

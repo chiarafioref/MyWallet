@@ -1,10 +1,10 @@
-// Settings section.
 import { state, applyTheme } from "../store.js";
 import { profile as profileApi, categories as catApi } from "../data.js";
 import { buildForm } from "../form.js";
 import { signOut } from "../auth.js";
-import { setCurrency, el, toast, openModal, closeModal, confirmDialog } from "../utils.js";
+import { setCurrency, el, toast, openModal, closeModal, confirmDialog, normalizeTitle } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
+import { isDemoUser } from "../demo.js";
 
 export function render(container) {
   container.innerHTML = "";
@@ -14,13 +14,28 @@ export function render(container) {
     [
       { name: "first_name", label: "Nome", value: p.first_name },
       { name: "last_name", label: "Cognome", value: p.last_name },
-      { name: "theme", label: "Tema", type: "select", value: p.theme, options: [
-        { value: "light", label: "Chiaro" }, { value: "dark", label: "Scuro" },
-      ]},
-      { name: "currency", label: "Valuta", type: "select", value: p.currency, options: [
-        { value: "EUR", label: "Euro (€)" }, { value: "USD", label: "Dollaro ($)" },
-        { value: "GBP", label: "Sterlina (£)" }, { value: "CHF", label: "Franco (CHF)" },
-      ]},
+      {
+        name: "theme",
+        label: "Tema",
+        type: "select",
+        value: p.theme,
+        options: [
+          { value: "light", label: "Chiaro" },
+          { value: "dark", label: "Scuro" },
+        ],
+      },
+      {
+        name: "currency",
+        label: "Valuta",
+        type: "select",
+        value: p.currency,
+        options: [
+          { value: "EUR", label: "Euro (€)" },
+          { value: "USD", label: "Dollaro ($)" },
+          { value: "GBP", label: "Sterlina (£)" },
+          { value: "CHF", label: "Franco (CHF)" },
+        ],
+      },
     ],
     {
       submitLabel: "Salva impostazioni",
@@ -55,18 +70,27 @@ export function render(container) {
     }
   );
 
+  // L'account demo è temporaneo: niente password da cambiare né account da eliminare.
+  const demo = isDemoUser(state.user);
+
   const view = el("div", { class: "view settings" }, [
     el("h2", { text: "Impostazioni" }),
 
     section("Profilo", profileForm),
-    section("Password", passwordForm),
+    demo ? null : section("Password", passwordForm),
     section("Categorie personalizzate", customCategories()),
 
     section(
       "Account",
       el("div", { class: "settings-danger" }, [
-        el("button", { class: "btn btn--ghost", onclick: async () => { await signOut(); } }, "Esci"),
-        el("button", { class: "btn btn--danger", onclick: confirmDelete }, "Elimina account"),
+        demo
+          ? el("p", {
+              class: "muted",
+              text: "Stai usando l'account demo: i dati vengono eliminati automaticamente allo scadere della sessione.",
+            })
+          : null,
+        el("button", { class: "btn btn--ghost", onclick: () => signOut() }, demo ? "Esci dalla demo" : "Esci"),
+        demo ? null : el("button", { class: "btn btn--danger", onclick: confirmDelete }, "Elimina account"),
       ])
     ),
   ]);
@@ -80,18 +104,34 @@ function section(title, content) {
 function customCategories() {
   const custom = state.categories.filter((c) => !c.is_default);
   return el("div", {}, [
-    el("button", { class: "btn btn--primary btn--sm", onclick: addCategoryModal }, [iconEl("plus", { size: 16 }), "Nuova categoria"]),
+    el("button", { class: "btn btn--primary btn--sm", onclick: addCategoryModal }, [
+      iconEl("plus", { size: 16 }),
+      "Nuova categoria",
+    ]),
     custom.length
-      ? el("ul", { class: "chip-list" }, custom.map((c) =>
-          el("li", { class: "chip" }, [
-            el("span", { text: `${c.name} · ${c.kind === "income" ? "entrata" : "uscita"}` }),
-            el("button", { class: "chip__x", "aria-label": "Elimina categoria", html: icon("close", { size: 14 }), onclick: async () => {
-              if (!(await confirmDialog(`Eliminare "${c.name}"?`))) return;
-              try { await catApi.remove(c.id); toast("Categoria eliminata", "success"); }
-              catch (err) { toast(err.message, "error"); }
-            }}),
-          ])
-        ))
+      ? el(
+          "ul",
+          { class: "chip-list" },
+          custom.map((c) =>
+            el("li", { class: "chip" }, [
+              el("span", { text: `${c.name} · ${c.kind === "income" ? "entrata" : "uscita"}` }),
+              el("button", {
+                class: "chip__x",
+                "aria-label": "Elimina categoria",
+                html: icon("close", { size: 14 }),
+                onclick: async () => {
+                  if (!(await confirmDialog(`Eliminare "${c.name}"?`))) return;
+                  try {
+                    await catApi.remove(c.id);
+                    toast("Categoria eliminata", "success");
+                  } catch (err) {
+                    toast(err.message, "error");
+                  }
+                },
+              }),
+            ])
+          )
+        )
       : el("p", { class: "muted", text: "Nessuna categoria personalizzata" }),
   ]);
 }
@@ -100,15 +140,22 @@ function addCategoryModal() {
   const body = buildForm(
     [
       { name: "name", label: "Nome categoria", required: true },
-      { name: "kind", label: "Tipo", type: "select", value: "expense", options: [
-        { value: "expense", label: "Uscita" }, { value: "income", label: "Entrata" },
-      ]},
+      {
+        name: "kind",
+        label: "Tipo",
+        type: "select",
+        value: "expense",
+        options: [
+          { value: "expense", label: "Uscita" },
+          { value: "income", label: "Entrata" },
+        ],
+      },
     ],
     {
       submitLabel: "Crea categoria",
       onSubmit: async (v) => {
         try {
-          await catApi.create({ name: v.name.toUpperCase(), kind: v.kind });
+          await catApi.create({ name: normalizeTitle(v.name), kind: v.kind });
           closeModal();
           toast("Categoria creata", "success");
         } catch (err) {
@@ -122,18 +169,27 @@ function addCategoryModal() {
 
 function confirmDelete() {
   const body = el("div", {}, [
-    el("p", { text: "Questa azione elimina tutti i tuoi dati (transazioni, budget, risparmi…). L'operazione è irreversibile." }),
+    el("p", {
+      text: "Questa azione elimina tutti i tuoi dati (transazioni, budget, risparmi…). L'operazione è irreversibile.",
+    }),
     el("div", { class: "settings-danger" }, [
       el("button", { class: "btn btn--ghost", onclick: () => closeModal() }, "Annulla"),
-      el("button", { class: "btn btn--danger", onclick: async () => {
-        try {
-          await profileApi.deleteData();
-          toast("Dati eliminati. Disconnessione…", "success");
-          setTimeout(() => signOut(), 1200);
-        } catch (err) {
-          toast(err.message, "error");
-        }
-      }}, "Elimina definitivamente"),
+      el(
+        "button",
+        {
+          class: "btn btn--danger",
+          onclick: async () => {
+            try {
+              await profileApi.deleteData();
+              toast("Dati eliminati. Disconnessione…", "success");
+              setTimeout(() => signOut(), 1200);
+            } catch (err) {
+              toast(err.message, "error");
+            }
+          },
+        },
+        "Elimina definitivamente"
+      ),
     ]),
   ]);
   openModal({ title: "Eliminare l'account?", body });

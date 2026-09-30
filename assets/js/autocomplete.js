@@ -1,19 +1,21 @@
-// Lightweight suggestions dropdown for a text <input>: shows a filterable
-// list of candidate strings below the field as the user types, reusing the
-// same look as the custom <select> menu (see select.js).
+// Suggerimenti per un campo di testo: lista filtrata durante la digitazione,
+// con lo stesso stile del menu di select.js.
 import { el } from "./utils.js";
 
-let current = null; // { input, menu, close } of the currently open menu
+let current = null;
 
 function closeCurrent() {
-  if (current) { current.close(); current = null; }
+  if (current) {
+    current.close();
+    current = null;
+  }
 }
 document.addEventListener("click", (e) => {
   if (current && !current.input.contains(e.target) && !current.menu.contains(e.target)) closeCurrent();
 });
 document.addEventListener("app:closepopups", closeCurrent);
 
-// candidates: array of strings, already ranked (most relevant first).
+// `candidates` deve essere già ordinato per rilevanza.
 export function enhanceAutocomplete(input, candidates) {
   if (!candidates || !candidates.length) return;
   input.setAttribute("autocomplete", "off");
@@ -32,7 +34,10 @@ export function enhanceAutocomplete(input, candidates) {
     menu.innerHTML = "";
     items = list.slice(0, 6).map((text) => {
       const opt = el("div", { class: "sel__opt", role: "option", text });
-      opt.addEventListener("mousedown", (e) => { e.preventDefault(); choose(text); });
+      opt.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        choose(text);
+      });
       menu.append(opt);
       return opt;
     });
@@ -48,7 +53,10 @@ export function enhanceAutocomplete(input, candidates) {
 
   function open() {
     const list = matches();
-    if (!list.length) { close(); return; }
+    if (!list.length) {
+      close();
+      return;
+    }
     if (!(current && current.input === input)) {
       closeCurrent();
       document.body.appendChild(menu);
@@ -91,7 +99,10 @@ export function enhanceAutocomplete(input, candidates) {
       active = (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
       highlight();
     } else if (e.key === "Enter") {
-      if (isOpen && active > -1) { e.preventDefault(); choose(items[active].textContent); }
+      if (isOpen && active > -1) {
+        e.preventDefault();
+        choose(items[active].textContent);
+      }
     } else if (e.key === "Escape" || e.key === "Tab") {
       close();
     }

@@ -1,16 +1,25 @@
-// Transactions: list, search/filters, CRUD.
 import { state, selectors, touch } from "../store.js";
 import { transactions as txApi, transfers as transferApi } from "../data.js";
 import { buildForm } from "../form.js";
 import { enhanceSelect } from "../select.js";
 import {
-  el, qs, formatMoney, formatDate, todayISO, toast, openModal, closeModal,
-  emptyState, debounce, confirmDialog,
+  el,
+  qs,
+  formatMoney,
+  formatDate,
+  todayISO,
+  toast,
+  openModal,
+  closeModal,
+  emptyState,
+  debounce,
+  confirmDialog,
+  parseDate,
 } from "../utils.js";
 import { icon, iconEl } from "../icons.js";
 
-const filters = { q: "", type: "", category: "", from: "", to: "", method: "", amountMin: "", amountMax: "" };
 const EMPTY = { q: "", type: "", category: "", from: "", to: "", method: "", amountMin: "", amountMax: "" };
+const filters = { ...EMPTY };
 let advancedOpen = false;
 
 export function render(container) {
@@ -22,8 +31,14 @@ export function render(container) {
         el("p", { class: "muted", text: "Entrate, uscite e trasferimenti tra i metodi di pagamento" }),
       ]),
       el("div", { class: "view-head__actions" }, [
-        el("button", { class: "btn btn--primary", onclick: () => openTxModal() }, [iconEl("plus", { size: 18 }), "Nuova transazione"]),
-        el("button", { class: "btn btn--ghost", onclick: () => openTransferModal() }, [iconEl("swap", { size: 17 }), "Trasferimento"]),
+        el("button", { class: "btn btn--primary", onclick: () => openTxModal() }, [
+          iconEl("plus", { size: 18 }),
+          "Nuova transazione",
+        ]),
+        el("button", { class: "btn btn--ghost", onclick: () => openTransferModal() }, [
+          iconEl("swap", { size: 17 }),
+          "Trasferimento",
+        ]),
       ]),
     ]),
     renderFilters(container),
@@ -33,7 +48,6 @@ export function render(container) {
   renderList();
 }
 
-// Filter bar: search + type + collapsible advanced panel.
 const TYPE_OPTS = [
   ["", "Tutti"],
   ["ENTRATA", "Entrate"],
@@ -41,8 +55,12 @@ const TYPE_OPTS = [
 ];
 const ADV_KEYS = ["category", "method", "from", "to", "amountMin", "amountMax"];
 const ADV_LABEL = {
-  category: "Categoria", method: "Metodo", from: "Dal", to: "Al",
-  amountMin: "Importo min.", amountMax: "Importo max.",
+  category: "Categoria",
+  method: "Metodo",
+  from: "Dal",
+  to: "Al",
+  amountMin: "Importo min.",
+  amountMax: "Importo max.",
 };
 
 function renderFilters(container) {
@@ -52,35 +70,43 @@ function renderFilters(container) {
     "div",
     { class: "tx-seg", "data-idx": String(TYPE_OPTS.findIndex((o) => o[0] === filters.type)) },
     TYPE_OPTS.map(([value, label]) =>
-      el("button", {
-        type: "button",
-        class: `tx-seg__btn${value === filters.type ? " is-active" : ""}`,
-        "data-val": value,
-        onclick: () => {
-          filters.type = value;
-          [...seg.children].forEach((b) => b.classList.toggle("is-active", b.dataset.val === value));
-          seg.dataset.idx = String(TYPE_OPTS.findIndex((o) => o[0] === value));
-          renderList();
-          syncChips();
+      el(
+        "button",
+        {
+          type: "button",
+          class: `tx-seg__btn${value === filters.type ? " is-active" : ""}`,
+          "data-val": value,
+          onclick: () => {
+            filters.type = value;
+            [...seg.children].forEach((b) => b.classList.toggle("is-active", b.dataset.val === value));
+            seg.dataset.idx = String(TYPE_OPTS.findIndex((o) => o[0] === value));
+            renderList();
+            syncChips();
+          },
         },
-      }, label)
+        label
+      )
     )
   );
 
-  const moreBtn = el("button", {
-    type: "button",
-    class: `tx-more${advancedOpen ? " is-open" : ""}`,
-    onclick: () => {
-      advancedOpen = !advancedOpen;
-      moreBtn.classList.toggle("is-open", advancedOpen);
-      qs("#tx-advanced")?.classList.toggle("is-open", advancedOpen);
+  const moreBtn = el(
+    "button",
+    {
+      type: "button",
+      class: `tx-more${advancedOpen ? " is-open" : ""}`,
+      onclick: () => {
+        advancedOpen = !advancedOpen;
+        moreBtn.classList.toggle("is-open", advancedOpen);
+        qs("#tx-advanced")?.classList.toggle("is-open", advancedOpen);
+      },
     },
-  }, [
-    el("span", { class: "icn-wrap", html: icon("filter", { size: 15 }) }),
-    el("span", { text: "Filtri" }),
-    el("span", { class: "tx-more__badge", id: "tx-fcount" }),
-    el("span", { class: "tx-more__chev icn-wrap", html: icon("chevronDown", { size: 14 }) }),
-  ]);
+    [
+      el("span", { class: "icn-wrap", html: icon("filter", { size: 15 }) }),
+      el("span", { text: "Filtri" }),
+      el("span", { class: "tx-more__badge", id: "tx-fcount" }),
+      el("span", { class: "tx-more__chev icn-wrap", html: icon("chevronDown", { size: 14 }) }),
+    ]
+  );
 
   const advField = (key, control) =>
     el("label", { class: "tx-adv__field" }, [el("span", { text: ADV_LABEL[key] }), control]);
@@ -88,27 +114,38 @@ function renderFilters(container) {
   const advanced = el("div", { class: `tx-advanced${advancedOpen ? " is-open" : ""}`, id: "tx-advanced" }, [
     el("div", { class: "tx-advanced__inner" }, [
       el("div", { class: "tx-adv__grid" }, [
-        advField("category", selectCtl("category", [
-          { value: "", label: "Tutte le categorie" },
-          ...cats.map((c) => ({ value: c.name, label: c.name })),
-        ])),
-        advField("method", selectCtl("method", [
-          { value: "", label: "Tutti i metodi" },
-          { value: "CARTA", label: "Carta" },
-          { value: "CONTANTI", label: "Contanti" },
-        ])),
+        advField(
+          "category",
+          selectCtl("category", [
+            { value: "", label: "Tutte le categorie" },
+            ...cats.map((c) => ({ value: c.name, label: c.name })),
+          ])
+        ),
+        advField(
+          "method",
+          selectCtl("method", [
+            { value: "", label: "Tutti i metodi" },
+            { value: "CARTA", label: "Carta" },
+            { value: "CONTANTI", label: "Contanti" },
+          ])
+        ),
         advField("from", dateCtl("from")),
         advField("to", dateCtl("to")),
         advField("amountMin", amountCtl("amountMin")),
         advField("amountMax", amountCtl("amountMax")),
       ]),
-      el("button", {
-        type: "button", class: "btn btn--ghost btn--sm tx-reset",
-        onclick: () => {
-          Object.assign(filters, EMPTY);
-          render(container);
+      el(
+        "button",
+        {
+          type: "button",
+          class: "btn btn--ghost btn--sm tx-reset",
+          onclick: () => {
+            Object.assign(filters, EMPTY);
+            render(container);
+          },
         },
-      }, "Azzera tutti i filtri"),
+        "Azzera tutti i filtri"
+      ),
     ]),
   ]);
 
@@ -117,8 +154,14 @@ function renderFilters(container) {
       el("div", { class: "tx-search" }, [
         el("span", { class: "icn-wrap", html: icon("search", { size: 16 }) }),
         el("input", {
-          type: "search", placeholder: "Cerca per titolo o descrizione…", value: filters.q,
-          oninput: debounce((e) => { filters.q = e.target.value.toLowerCase(); renderList(); syncChips(); }, 200),
+          type: "search",
+          placeholder: "Cerca per titolo o descrizione…",
+          value: filters.q,
+          oninput: debounce((e) => {
+            filters.q = e.target.value.toLowerCase();
+            renderList();
+            syncChips();
+          }, 200),
         }),
       ]),
       seg,
@@ -132,7 +175,13 @@ function renderFilters(container) {
 function selectCtl(key, options) {
   const sel = el(
     "select",
-    { onchange: (e) => { filters[key] = e.target.value; renderList(); syncChips(); } },
+    {
+      onchange: (e) => {
+        filters[key] = e.target.value;
+        renderList();
+        syncChips();
+      },
+    },
     options.map((o) => el("option", { value: o.value, selected: o.value === filters[key] || null }, o.label))
   );
   requestAnimationFrame(() => enhanceSelect(sel));
@@ -140,14 +189,28 @@ function selectCtl(key, options) {
 }
 function dateCtl(key) {
   return el("input", {
-    type: "date", value: filters[key],
-    onchange: (e) => { filters[key] = e.target.value; renderList(); syncChips(); },
+    type: "date",
+    value: filters[key],
+    onchange: (e) => {
+      filters[key] = e.target.value;
+      renderList();
+      syncChips();
+    },
   });
 }
 function amountCtl(key) {
   return el("input", {
-    type: "number", step: "0.01", min: "0", inputmode: "decimal", placeholder: "€", value: filters[key],
-    oninput: debounce((e) => { filters[key] = e.target.value; renderList(); syncChips(); }, 250),
+    type: "number",
+    step: "0.01",
+    min: "0",
+    inputmode: "decimal",
+    placeholder: "€",
+    value: filters[key],
+    oninput: debounce((e) => {
+      filters[key] = e.target.value;
+      renderList();
+      syncChips();
+    }, 250),
   });
 }
 
@@ -174,25 +237,35 @@ function syncChips() {
   holder.classList.toggle("is-empty", active.length === 0);
   active.forEach((k) => {
     holder.append(
-      el("button", {
-        type: "button", class: "tx-chip",
-        onclick: () => { filters[k] = ""; syncAdvancedInputs(); renderList(); syncChips(); },
-      }, [
-        el("span", { text: chipText(k) }),
-        el("span", { class: "icn-wrap", html: icon("close", { size: 12 }) }),
-      ])
+      el(
+        "button",
+        {
+          type: "button",
+          class: "tx-chip",
+          onclick: () => {
+            filters[k] = "";
+            syncAdvancedInputs();
+            renderList();
+            syncChips();
+          },
+        },
+        [el("span", { text: chipText(k) }), el("span", { class: "icn-wrap", html: icon("close", { size: 12 }) })]
+      )
     );
   });
 }
 
-// Re-sync the advanced panel inputs with `filters` (after a chip is removed).
+// Riallinea i controlli del pannello avanzato a `filters` dopo la rimozione di un chip.
 function syncAdvancedInputs() {
   const adv = qs("#tx-advanced");
   if (!adv) return;
   adv.querySelectorAll(".tx-adv__field").forEach((f, i) => {
     const key = ADV_KEYS[i];
     const ctl = f.querySelector("select, input");
-    if (ctl) { ctl.value = filters[key]; ctl.dispatchEvent(new Event("sel:sync")); }
+    if (ctl) {
+      ctl.value = filters[key];
+      ctl.dispatchEvent(new Event("sel:sync"));
+    }
   });
 }
 
@@ -218,13 +291,14 @@ function applyFilters(list) {
 const methodLabel = (m) => (m === "CONTANTI" ? "Contanti" : "Carta");
 
 function filteredTransfers() {
-  // Transfers are neither income/expense nor do they have a category.
+  // I trasferimenti non sono né entrate né uscite e non hanno categoria.
   if (filters.type || filters.category) return [];
   const min = filters.amountMin === "" ? null : Number(filters.amountMin);
   const max = filters.amountMax === "" ? null : Number(filters.amountMax);
   return state.transfers.filter((tr) => {
     if (filters.q) {
-      const hay = `trasferimento ${tr.note || ""} ${methodLabel(tr.from_method)} ${methodLabel(tr.to_method)}`.toLowerCase();
+      const hay =
+        `trasferimento ${tr.note || ""} ${methodLabel(tr.from_method)} ${methodLabel(tr.to_method)}`.toLowerCase();
       if (!hay.includes(filters.q)) return false;
     }
     if (filters.method && tr.from_method !== filters.method && tr.to_method !== filters.method) return false;
@@ -240,14 +314,25 @@ function txRowEl(t, k) {
   const tag = t.subscription_id
     ? "abbonamento"
     : t.is_recurring
-      ? (t.recurring_end ? `ricorrente · fino al ${formatDate(t.recurring_end)}` : "ricorrente")
-      : t.recurring_parent_id ? "ricorrente" : "";
+      ? t.recurring_end
+        ? `ricorrente · fino al ${formatDate(t.recurring_end)}`
+        : "ricorrente"
+      : t.recurring_parent_id
+        ? "ricorrente"
+        : "";
   return el("li", { class: "tx-row card", style: `--i:${Math.min(k, 14)}` }, [
-    el("div", { class: `tx-row__icon tx-row__icon--${t.type === "ENTRATA" ? "in" : "out"}`, html: icon(t.type === "ENTRATA" ? "arrowUp" : "arrowDown", { size: 18 }) }),
+    el("div", {
+      class: `tx-row__icon tx-row__icon--${t.type === "ENTRATA" ? "in" : "out"}`,
+      html: icon(t.type === "ENTRATA" ? "arrowUp" : "arrowDown", { size: 18 }),
+    }),
     el("div", { class: "tx-row__main" }, [
       el("span", { class: "tx-row__title" }, [
         el("strong", { text: t.title }),
-        tag ? el("span", { class: "tx-row__tag", title: tag }, [el("span", { class: "icn-wrap", html: icon("repeat", { size: 11 }) })]) : null,
+        tag
+          ? el("span", { class: "tx-row__tag", title: tag }, [
+              el("span", { class: "icn-wrap", html: icon("repeat", { size: 11 }) }),
+            ])
+          : null,
       ]),
       el("span", { class: "tx-row__meta muted" }, [
         el("span", { class: "tx-row__meta-t", text: `${t.category_name || "—"} · ${formatDate(t.tx_date)}` }),
@@ -264,8 +349,20 @@ function txRowEl(t, k) {
       text: formatMoney(t.type === "ENTRATA" ? +t.amount : -t.amount, { sign: true }),
     }),
     el("div", { class: "tx-row__actions" }, [
-      el("button", { class: "icon-btn", title: "Modifica", "aria-label": "Modifica", html: icon("pencil", { size: 16 }), onclick: () => openTxModal(t) }),
-      el("button", { class: "icon-btn icon-btn--danger", title: "Elimina", "aria-label": "Elimina", html: icon("trash", { size: 16 }), onclick: () => removeTx(t) }),
+      el("button", {
+        class: "icon-btn",
+        title: "Modifica",
+        "aria-label": "Modifica",
+        html: icon("pencil", { size: 16 }),
+        onclick: () => openTxModal(t),
+      }),
+      el("button", {
+        class: "icon-btn icon-btn--danger",
+        title: "Elimina",
+        "aria-label": "Elimina",
+        html: icon("trash", { size: 16 }),
+        onclick: () => removeTx(t),
+      }),
     ]),
   ]);
 }
@@ -276,14 +373,29 @@ function trRowEl(tr, k) {
     el("div", { class: "tx-row__main" }, [
       el("span", { class: "tx-row__title" }, [el("strong", { text: "Trasferimento" })]),
       el("span", { class: "tx-row__meta muted" }, [
-        el("span", { class: "tx-row__meta-t", text: `${methodLabel(tr.from_method)} → ${methodLabel(tr.to_method)} · ${formatDate(tr.transfer_date)}` }),
+        el("span", {
+          class: "tx-row__meta-t",
+          text: `${methodLabel(tr.from_method)} → ${methodLabel(tr.to_method)} · ${formatDate(tr.transfer_date)}`,
+        }),
       ]),
       tr.note ? el("span", { class: "tx-row__desc muted", text: tr.note }) : null,
     ]),
     el("span", { class: "tx-amount tx-amount--transfer", text: formatMoney(+tr.amount) }),
     el("div", { class: "tx-row__actions" }, [
-      el("button", { class: "icon-btn", title: "Modifica", "aria-label": "Modifica", html: icon("pencil", { size: 16 }), onclick: () => openTransferModal(tr) }),
-      el("button", { class: "icon-btn icon-btn--danger", title: "Elimina", "aria-label": "Elimina", html: icon("trash", { size: 16 }), onclick: () => removeTransfer(tr) }),
+      el("button", {
+        class: "icon-btn",
+        title: "Modifica",
+        "aria-label": "Modifica",
+        html: icon("pencil", { size: 16 }),
+        onclick: () => openTransferModal(tr),
+      }),
+      el("button", {
+        class: "icon-btn icon-btn--danger",
+        title: "Elimina",
+        "aria-label": "Elimina",
+        html: icon("trash", { size: 16 }),
+        onclick: () => removeTransfer(tr),
+      }),
     ]),
   ]);
 }
@@ -298,7 +410,9 @@ function renderList() {
 
   if (!txRows.length && !trRows.length) {
     const anything = state.transactions.length || state.transfers.length;
-    holder.append(emptyState("search", anything ? "Nessun movimento corrisponde ai filtri" : "Ancora nessuna transazione"));
+    holder.append(
+      emptyState("search", anything ? "Nessun movimento corrisponde ai filtri" : "Ancora nessuna transazione")
+    );
     return;
   }
 
@@ -309,7 +423,8 @@ function renderList() {
 
   const income = txRows.filter((t) => t.type === "ENTRATA").reduce((s, t) => s + +t.amount, 0);
   const expense = txRows.filter((t) => t.type === "USCITA").reduce((s, t) => s + +t.amount, 0);
-  const countText = `${txRows.length} ${txRows.length === 1 ? "transazione" : "transazioni"}` +
+  const countText =
+    `${txRows.length} ${txRows.length === 1 ? "transazione" : "transazioni"}` +
     (trRows.length ? ` · ${trRows.length} trasferiment${trRows.length === 1 ? "o" : "i"}` : "");
   holder.append(
     el("div", { class: "list-summary" }, [
@@ -321,26 +436,38 @@ function renderList() {
     ])
   );
 
-  holder.append(el("ul", { class: "tx-list" }, merged.map((r, k) => (r.kind === "tx" ? txRowEl(r.d, k) : trRowEl(r.d, k)))));
+  holder.append(
+    el(
+      "ul",
+      { class: "tx-list" },
+      merged.map((r, k) => (r.kind === "tx" ? txRowEl(r.d, k) : trRowEl(r.d, k)))
+    )
+  );
 }
 
 function categoryOptions(type) {
-  // Expenses: grouped by theme (tidier menu); income: flat list.
   if (type !== "ENTRATA") return selectors.groupedExpenseCategories();
   return selectors.incomeCategories().map((c) => ({ value: c.id, label: c.name }));
 }
 
-// Common titles to suggest when the user has little or no history yet.
 const BASE_TITLE_SUGGESTIONS = {
   USCITA: [
-    "SPESA SUPERMERCATO", "BENZINA", "AFFITTO", "BOLLETTA LUCE", "BOLLETTA GAS",
-    "RISTORANTE", "FARMACIA", "PARRUCCHIERE", "PALESTRA", "ABBONAMENTO STREAMING",
+    "Spesa supermercato",
+    "Benzina",
+    "Affitto",
+    "Bolletta luce",
+    "Bolletta gas",
+    "Ristorante",
+    "Farmacia",
+    "Parrucchiere",
+    "Palestra",
+    "Abbonamento streaming",
   ],
-  ENTRATA: ["STIPENDIO", "RIMBORSO", "REGALO", "BONUS", "VENDITA", "LAVORO FREELANCE"],
+  ENTRATA: ["Stipendio", "Rimborso", "Regalo", "Bonus", "Vendita", "Lavoro freelance"],
 };
 
-// Titles already used by the user for this movement type, ranked by how often
-// and how recently they were used, followed by generic suggestions not yet used.
+// Suggerimenti per il titolo: prima quelli già usati (per frequenza, poi recenza),
+// poi quelli generici non ancora usati.
 function titleSuggestions(type) {
   const stats = new Map(); // title -> { count, lastDate }
   for (const t of state.transactions) {
@@ -364,26 +491,63 @@ export function openTxModal(tx = null) {
   let type = tx?.type || "USCITA";
 
   const bodyWrap = el("div");
-  const modal = openModal({ title: editing ? "Modifica transazione" : "Nuova transazione", body: bodyWrap });
+  openModal({ title: editing ? "Modifica transazione" : "Nuova transazione", body: bodyWrap });
 
   const buildFields = () =>
     buildForm(
       [
-        { name: "type", label: "Tipo di movimento", type: "select", value: type, options: [
-          { value: "USCITA", label: "Uscita" }, { value: "ENTRATA", label: "Entrata" },
-        ]},
-        { name: "title", label: "Titolo", required: true, value: tx?.title, suggestions: titleSuggestions(type) },
-        { name: "amount", label: "Importo (€)", type: "number", step: "0.01", min: "0.01", required: true, value: tx?.amount },
-        { name: "category_id", label: "Categoria", type: "select", required: true, value: tx?.category_id, options: categoryOptions(type) },
-        { name: "tx_date", label: "Data", type: "date", required: true, value: tx?.tx_date || todayISO() },
-        { name: "payment_method", label: "Metodo di pagamento", type: "select", value: tx?.payment_method || "CARTA", options: [
-          { value: "CARTA", label: "Carta" }, { value: "CONTANTI", label: "Contanti" },
-        ]},
-        { name: "description", label: "Descrizione (facoltativa)", type: "textarea", value: tx?.description },
-        { name: "is_recurring", label: "Transazione ricorrente (ogni mese)", type: "checkbox", value: tx?.is_recurring },
         {
-          name: "recurring_end", label: "Fine rate prevista (facoltativa)", type: "date",
-          value: tx?.recurring_end || "", showIf: "is_recurring",
+          name: "type",
+          label: "Tipo di movimento",
+          type: "select",
+          value: type,
+          options: [
+            { value: "USCITA", label: "Uscita" },
+            { value: "ENTRATA", label: "Entrata" },
+          ],
+        },
+        { name: "title", label: "Titolo", required: true, value: tx?.title, suggestions: titleSuggestions(type) },
+        {
+          name: "amount",
+          label: "Importo (€)",
+          type: "number",
+          step: "0.01",
+          min: "0.01",
+          required: true,
+          value: tx?.amount,
+        },
+        {
+          name: "category_id",
+          label: "Categoria",
+          type: "select",
+          required: true,
+          value: tx?.category_id,
+          options: categoryOptions(type),
+        },
+        { name: "tx_date", label: "Data", type: "date", required: true, value: tx?.tx_date || todayISO() },
+        {
+          name: "payment_method",
+          label: "Metodo di pagamento",
+          type: "select",
+          value: tx?.payment_method || "CARTA",
+          options: [
+            { value: "CARTA", label: "Carta" },
+            { value: "CONTANTI", label: "Contanti" },
+          ],
+        },
+        { name: "description", label: "Descrizione (facoltativa)", type: "textarea", value: tx?.description },
+        {
+          name: "is_recurring",
+          label: "Transazione ricorrente (ogni mese)",
+          type: "checkbox",
+          value: tx?.is_recurring,
+        },
+        {
+          name: "recurring_end",
+          label: "Fine rate prevista (facoltativa)",
+          type: "date",
+          value: tx?.recurring_end || "",
+          showIf: "is_recurring",
           hint: "Dopo questa data la ricorrenza si ferma automaticamente",
         },
       ],
@@ -400,7 +564,7 @@ export function openTxModal(tx = null) {
             payment_method: v.payment_method,
             description: v.description || null,
             is_recurring: v.is_recurring,
-            recurring_day: v.is_recurring ? new Date(v.tx_date).getDate() : null,
+            recurring_day: v.is_recurring ? parseDate(v.tx_date).getDate() : null,
             recurring_end: v.is_recurring && v.recurring_end ? v.recurring_end : null,
           };
           try {
@@ -417,7 +581,7 @@ export function openTxModal(tx = null) {
 
   const mount = () => {
     const form = buildFields();
-    // When the type changes, regenerate the category options.
+    // Al cambio di tipo il form viene ricostruito con le categorie corrispondenti.
     form.addEventListener("change", (e) => {
       if (e.target.name === "type" && e.target.value !== type) {
         type = e.target.value;
@@ -441,31 +605,46 @@ async function removeTx(tx) {
   }
 }
 
-// Money transfer between payment methods.
 export function openTransferModal(tr = null) {
   const editing = !!tr;
   const dir = tr ? `${tr.from_method}>${tr.to_method}` : "CARTA>CONTANTI";
 
-  // Available balance per method. When editing, the transfer being modified is
-  // already reflected in the balance, so add its amount back to the source.
+  // In modifica, l'importo del trasferimento corrente è già scalato dal saldo di origine.
   const balances = selectors.paymentMethodBalances();
   const methodLbl = (m) => (m === "CONTANTI" ? "contanti" : "carta");
-  const availableFor = (method) =>
-    balances[method] + (editing && tr.from_method === method ? +tr.amount : 0);
+  const availableFor = (method) => balances[method] + (editing && tr.from_method === method ? +tr.amount : 0);
   const cents = (n) => Math.round((Number(n) || 0) * 100);
 
   const body = buildForm(
     [
       {
-        name: "direction", label: "Spostamento", segmented: true, value: dir,
+        name: "direction",
+        label: "Spostamento",
+        segmented: true,
+        value: dir,
         options: [
           { value: "CARTA>CONTANTI", label: "Carta → Contanti" },
           { value: "CONTANTI>CARTA", label: "Contanti → Carta" },
         ],
       },
-      { name: "amount", label: "Importo (€)", type: "number", step: "0.01", min: "0.01", required: true, value: tr?.amount, placeholder: "50,00" },
+      {
+        name: "amount",
+        label: "Importo (€)",
+        type: "number",
+        step: "0.01",
+        min: "0.01",
+        required: true,
+        value: tr?.amount,
+        placeholder: "50,00",
+      },
       { name: "transfer_date", label: "Data", type: "date", required: true, value: tr?.transfer_date || todayISO() },
-      { name: "note", label: "Nota (facoltativa)", type: "text", value: tr?.note || "", placeholder: "Es. prelievo bancomat" },
+      {
+        name: "note",
+        label: "Nota (facoltativa)",
+        type: "text",
+        value: tr?.note || "",
+        placeholder: "Es. prelievo bancomat",
+      },
     ],
     {
       submitLabel: editing ? "Salva modifiche" : "Registra trasferimento",
@@ -476,7 +655,13 @@ export function openTransferModal(tr = null) {
         if (cents(v.amount) > cents(available)) {
           return toast(`Saldo insufficiente: su ${methodLbl(from_method)} hai ${formatMoney(available)}`, "error");
         }
-        const payload = { from_method, to_method, amount: v.amount, transfer_date: v.transfer_date, note: v.note || null };
+        const payload = {
+          from_method,
+          to_method,
+          amount: v.amount,
+          transfer_date: v.transfer_date,
+          note: v.note || null,
+        };
         try {
           if (editing) {
             const row = await transferApi.update(tr.id, payload);
@@ -490,15 +675,12 @@ export function openTransferModal(tr = null) {
           touch();
           toast(editing ? "Trasferimento aggiornato" : "Trasferimento registrato", "success");
         } catch (err) {
-          toast(/does not exist|schema cache|PGRST/i.test(err.message || "")
-            ? "Aggiorna il database (tabella transfers) per usare i trasferimenti."
-            : err.message, "error");
+          toast(err.message, "error");
         }
       },
     }
   );
 
-  // Live feedback: show the available balance and flag an over-limit amount.
   const dirInput = body.querySelector('[name="direction"]');
   const amountInput = body.querySelector('[name="amount"]');
   const amountField = amountInput?.closest(".field");
